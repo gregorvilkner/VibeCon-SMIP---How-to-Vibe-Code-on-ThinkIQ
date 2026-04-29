@@ -295,6 +295,75 @@ file save, the SMIP-side IDE doesn't. Fix in `PAGES/`, re-port, re-paste.
 > hand-written GraphQL. Read the SMIP-side file as the existence-proof:
 > this is what the loop produces.
 
+## Review the language — it's the artifact
+
+An LLM in whole-project mode will happily produce a mountain of
+artifacts from a single prompt — methods, registry entries, classes
+in `SMIP_IO/model/`, docstrings, intent comments, tool descriptions.
+Most of that mountain is **language**, not code. Open any production
+file in this repo and count: roughly 80% prose, 20% Python. That
+ratio is deliberate.
+
+The language is the highest-leverage artifact you'll ship, because
+it's what almost everything else reads:
+
+- It's what the **LLM reads** when you load the repo into a future
+  whole-project session. Vague descriptions become vague assumptions
+  every time.
+- It's what the **`/chat` agent reads** when picking a tool. Bad
+  description, bad tool selection — see anti-patterns below.
+- It's what the **docs page renders**, what **IDE tooltips show**, and
+  what **you** will read in three months when you've forgotten the why.
+
+The first draft of all this language is LLM-generated, and it's almost
+never right the first time. The LLM hedges, repeats, generalizes, uses
+templated phrasings, and confidently misnames things. Going through
+every method, every tool, every class on a dedicated review pass —
+reading the language out loud and rewriting wherever it's wrong,
+vague, or missing the *why* — is some of the highest-leverage time
+you will spend on a project. It compounds: every future LLM session
+on the codebase becomes more reliable because the context it reads is
+more honest.
+
+Treat the language review as part of the build, not a polish step.
+When you finish a session where the LLM produced a batch of new tools
+or model classes, **always plan a follow-up pass just to read what
+was written**. Most of the work in that pass is human judgment about
+wording, naming, and intent — exactly the thing the LLM is least
+equipped to nail on the first try.
+
+**Do that pass *with* the LLM, not alone in VS Code.** Open the same
+whole-project session and tell it something like:
+
+> Let's review the tools and the docstrings one by one. One after the
+> other, bathroom, sleep, and shower breaks included.
+
+The LLM will walk you through each artifact in order, pause for your
+judgment at every one, and resume cleanly when you come back — "ok,
+pick up where we left off?" — even days later. The review will
+genuinely run across multiple sessions; that's fine, the file tree
+holds your place. Trying to do this solo by scrolling through files
+in your editor is slower and weaker: you'll skim where you should
+pause, and the patterns across files (this tool's description echoes
+that one's because the LLM templated both) won't show up until much
+later.
+
+**And once you've done a solo pass, the same pattern scales to your
+team.** Hand individual tools (and the model classes they touch) to
+colleagues with the relevant subject-matter expertise — the control
+engineer who knows the equipment hierarchy, the operations manager
+who lives with the downtime reason codes, the metallurgist who knows
+what a heat number actually means in *your* plant. Open the LLM
+session, point it at the tool, let the SME read the description out
+loud, and transcribe their corrections in real time. **Subject-matter
+expertise is a team sport.** The right name for a thing, the right
+"when do I use this" hint, the right unit of measure for a field —
+that knowledge usually lives in someone else's head. The clean tool
+boundaries and the 80%-prose ratio are what make the handoff
+practical: you're giving a colleague a small, self-contained,
+mostly-prose artifact to react to — not asking them to navigate
+Python.
+
 ## Anti-patterns to watch for
 
 A few failure modes worth naming so you can spot them early:
