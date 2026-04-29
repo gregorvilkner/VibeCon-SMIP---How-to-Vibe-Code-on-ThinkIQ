@@ -124,6 +124,30 @@ If either returns library rows, the rest of the template is good to build on.
 Details on what each sample does and how to copy them are in the PAGES and
 SCRIPTS sections below.
 
+## Recommended setup — give your LLM the whole repo
+
+The big shift isn't "use an LLM to write code." It's the move from
+copy-pasting snippets into a chat to having the LLM **inhale the whole
+project** and cross-reason across files. This template is built for that
+mode.
+
+The repo is dense in a deliberate way: one `TOOL_REGISTRY` entry fans out
+to a REST endpoint, an MCP wrapper, an OpenAI tool spec, and a docs-page
+section, plus a dual-mode import pattern in `SMIP_IO/`. A snippet-mode LLM
+will guess at how it all fits. A whole-project-mode LLM, with every file in
+context, will name the three places to edit and copy the existing registry
+entry's shape into them.
+
+So open the folder in something that can hold the whole tree in context —
+Claude Desktop with the folder mounted as a project, Cursor or Claude Code
+in the project root, or any LLM-aware editor where the model has read
+access to every file.
+
+Bonus from pillar 2: the built-in MCP server gives that same in-context LLM
+a live channel into the SMIP itself — read the registry to know *what*
+tools exist, then *call* them through MCP to see real data. Source code
+plus live introspection in one chat session.
+
 ## The PAGES convention
 
 A "page" is a folder under `PAGES/` containing HTML + Vue + a tiny Python
