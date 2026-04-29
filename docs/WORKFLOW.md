@@ -252,11 +252,13 @@ and how to swap in `tiqJSHelper.invokeGraphQLAsync`.
 > Create a browser script I can copy into the SMIP.
 
 That's the literal prompt that produced
-`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html` from
-`PAGES/02_unit_converter/`. The LLM does the templated substitution,
-drops the Vue CDN tag, scopes the CSS, emits the right Joomla/PHP
-preamble — all from context. The conversion is largely mechanical
-because both sides are already Vue + GraphQL.
+`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html` from a
+localhost `PAGES/02_unit_converter/` Vue page that lived in this repo
+when these docs were written — since deleted to leave the round-trip as
+an exercise (see the meta note below). The LLM does the templated
+substitution, drops the Vue CDN tag, scopes the CSS, emits the right
+Joomla/PHP preamble — all from context. The conversion is largely
+mechanical because both sides are already Vue + GraphQL.
 
 Then ship it:
 
