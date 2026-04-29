@@ -225,6 +225,60 @@ When you build a new Python tool that you know will round-trip, mirror
 it on the JS side at the same time — same name, same parameters, same
 return shape. Future-you will thank present-you for the discipline.
 
+### 7. Hand the conversion to your LLM, paste, validate
+
+You have a localhost page that earns its keep (step 5) and the matching
+tool present on the JS SDK side (step 6). Now hand the actual port to
+the same whole-project-mode LLM that built the page in the first place.
+Prompt template:
+
+> Port `PAGES/<NN>_<name>/<name>.html` to a SMIP-side browser script.
+> Use `___SMIP_SAAS_SIDE___/Sample Scripts/sample_browser_script.html`
+> as the template (or `sample_display_script.html` if the page is bound
+> to a specific instance via `context.std_inputs.node_id`). Replace the
+> `fetch('/api/tool/<tool_name>')` call with
+> `tiqJSHelper.invokeGraphQLAsync(query)` using the GraphQL query string
+> from the tool's `TOOL_REGISTRY` entry in `SMIP_MCP/smip_tools.py`. Keep
+> the Vue component (data, computed, methods, template, styles)
+> otherwise identical. Drop the `<script src="https://unpkg.com/vue@3/...">`
+> tag — Vue is provided ambiently by `tiq.core.js` in the SMIP runtime.
+
+The conversion is largely mechanical because both sides are already
+Vue + GraphQL — the LLM is mostly doing a templated substitution it
+has all the context for.
+
+Then ship it:
+
+1. Copy the LLM's output into your SMIP's browser-script editor.
+2. Save and preview.
+3. Confirm the page renders and behaves identically to the localhost
+   version.
+
+If it doesn't work first try, the usual suspects are:
+
+- The SMIP runtime's Vue version doesn't support a feature your
+  localhost page relied on (less likely with Vue 3 from CDN; both sides
+  are typically aligned).
+- A GraphQL field name differs between what's in your tool's query and
+  what the SMIP-side schema actually accepts at this tenant (rare —
+  TOOL_REGISTRY's query is the source of truth on both sides).
+- A CSS rule conflicts with the SMIP's host stylesheet (most common).
+
+Iterate locally first when you hit one of these — `PAGES/` reloads on
+file save, the SMIP-side IDE doesn't. Fix in `PAGES/`, re-port, re-paste.
+
+> **⚡ Meta note: this entire example is vibe-coded.** Every artifact in
+> the `02_unit_converter` round-trip — the Python tool
+> (`get_quantities_with_units`), the localhost page
+> (`PAGES/02_unit_converter/`), and the SMIP-side browser script
+> (`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html`) — was
+> produced end-to-end by an LLM with the whole repo in context, with
+> only minor course corrections from a human (small UX tweaks like
+> "default to °F → °C" and "add a flip button"). Zero hand-written
+> JavaScript, zero hand-written GraphQL. The loud yellow banners on the
+> tool's docs section, the converter pages, and the MCP wrapper are
+> there as an existence-proof: this is what the loop produces.
+
 ## Anti-patterns to watch for
 
 A few failure modes worth naming so you can spot them early:

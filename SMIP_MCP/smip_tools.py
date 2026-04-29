@@ -68,8 +68,14 @@ TOOL_REGISTRY = [
         # Quantities + units with conversion factors. Powers
         # PAGES/02_unit_converter/.
         "name": "get_quantities_with_units",
-        "summary": "Return every quantity with its full unit list and conversion factors (offset + multiplier). No parameters.",
+        "summary": "[VIBE-CODED] Return every quantity with its full unit list and conversion factors (offset + multiplier). No parameters.",
         "description": (
+            "⚡ VIBE-CODED — this tool, the page that uses it "
+            "(PAGES/02_unit_converter/), and the ported SMIP-side browser "
+            "script (___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html) "
+            "were produced end-to-end by an LLM with the whole repo in "
+            "context. Zero hand-written code. See docs/WORKFLOW.md step 7 "
+            "for the workflow.\n\n"
             "Return every measurement quantity in the SoR as a flat list, "
             "each with its `measurementUnits` (id, displayName, description, "
             "symbol, conversionOffset, conversionMultiplier) so a caller can "

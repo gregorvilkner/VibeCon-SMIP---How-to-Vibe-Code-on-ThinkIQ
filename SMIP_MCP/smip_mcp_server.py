@@ -65,7 +65,14 @@ def get_libraries() -> str:
 
 @mcp.tool(description=_R["get_quantities_with_units"]["description"])
 def get_quantities_with_units() -> str:
-    """Return every quantity with its full unit list and conversion factors.
+    """⚡ VIBE-CODED — return every quantity with its full unit list and
+    conversion factors.
+
+    This tool, the localhost page that uses it
+    (PAGES/02_unit_converter/), and the ported SMIP-side browser script
+    were produced end-to-end by an LLM with the whole repo in context —
+    zero hand-written code, just a few prompts to nudge minor changes.
+    See docs/WORKFLOW.md step 7 for the workflow.
 
     No parameters. Returns a JSON-encoded list — full row shape and the
     client-side conversion math live in TOOL_REGISTRY (smip_tools.py).

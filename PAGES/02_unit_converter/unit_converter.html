@@ -37,6 +37,18 @@
     .flip-btn:hover  { background: #f3f7f9; }
     .flip-btn:active { background: #e8eff2; }
 
+    .vibe-banner {
+      background: #fff3cd;
+      border-left: 4px solid #f0ad4e;
+      padding: .75rem 1rem;
+      margin-bottom: 1.5rem;
+      font-size: .9rem;
+      color: #664d03;
+      border-radius: 0 4px 4px 0;
+      line-height: 1.45;
+    }
+    .vibe-banner code { background: #fde9a4; padding: 1px 4px; border-radius: 3px; font-size: .9em; }
+
     .result {
       margin-top: 1.5rem;
       padding: 1rem 1.25rem;
@@ -65,6 +77,16 @@
 </head>
 <body>
   <div id="app">
+    <div class="vibe-banner">
+      ⚡ <strong>This page is vibe-coded.</strong> Every line here, the
+      <code>get_quantities_with_units</code> tool behind it, and the
+      ported SMIP-side browser script
+      (<code>___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html</code>)
+      were produced end-to-end by an LLM with the whole repo in context —
+      zero hand-written code, just a few prompts to nudge minor changes.
+      See <code>docs/WORKFLOW.md</code> step 7 for the workflow.
+    </div>
+
     <h1>SMIP Unit Converter</h1>
     <p class="meta">
       Live unit conversion across every quantity defined in your SMIP.
