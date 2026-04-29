@@ -64,48 +64,6 @@ TOOL_REGISTRY = [
         "ui": {"inputs": []},
         "fn": lambda m, a: m.get_libraries(),
     },
-    {
-        # Quantities + units with conversion factors. Powers
-        # PAGES/02_unit_converter/.
-        "name": "get_quantities_with_units",
-        "summary": "[VIBE-CODED] Return every quantity with its full unit list and conversion factors (offset + multiplier). No parameters.",
-        "description": (
-            "⚡ VIBE-CODED — this tool, the page that uses it "
-            "(PAGES/02_unit_converter/), and the ported SMIP-side browser "
-            "script (___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html) "
-            "were produced end-to-end by an LLM with the whole repo in "
-            "context. Zero hand-written code. See docs/WORKFLOW.md step 7 "
-            "for the workflow.\n\n"
-            "Return every measurement quantity in the SoR as a flat list, "
-            "each with its `measurementUnits` (id, displayName, description, "
-            "symbol, conversionOffset, conversionMultiplier) so a caller can "
-            "do real numeric unit conversions client-side. No parameters.\n\n"
-            "Used by PAGES/02_unit_converter/ for live unit conversion "
-            "across every quantity defined in the SMIP.\n\n"
-            "Conversion math (client side):\n"
-            "    base   = (value + fromOffset) * fromMultiplier\n"
-            "    target = base / toMultiplier - toOffset\n\n"
-            "The 'base' unit per quantity is the one where "
-            "conversionMultiplier == 1 AND conversionOffset == 0 (e.g. "
-            "kelvin for Temperature, meter for Length, kilogram for Mass). "
-            "Most quantities have exactly one; if a quantity exposes more "
-            "than one (data inconsistency) the converter just trusts the "
-            "factors as given.\n\n"
-            "One GraphQL round-trip:\n"
-            "  query GetQuantitiesWithUnits {\n"
-            "    quantities {\n"
-            "      id displayName description quantitySymbol\n"
-            "      measurementUnits {\n"
-            "        id displayName description\n"
-            "        conversionOffset conversionMultiplier symbol\n"
-            "      }\n"
-            "    }\n"
-            "  }\n"
-        ),
-        "parameters": {"type": "object", "properties": {}, "required": []},
-        "ui": {"inputs": []},
-        "fn": lambda m, a: m.get_quantities_with_units(),
-    },
 ]
 
 

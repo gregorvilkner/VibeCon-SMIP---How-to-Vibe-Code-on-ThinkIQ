@@ -125,23 +125,30 @@ launcher + `.html` Vue file). Scripts live directly under `SCRIPTS/` as
 process, the backend is unaffected, and a buggy page can't break sibling
 pages. See [ARCHITECTURE](ARCHITECTURE.md) for the full launcher pattern.
 
-**Worked examples to point your LLM at.** Two sample pages already in
-`PAGES/` set the shape:
+**Worked example to point your LLM at.** One sample page ships in
+`PAGES/` to set the shape:
 
 - `01_list_libraries/` — minimal. One fetch on mount, render an `id` /
-  `displayName` table. The right shape when you just need to see what
-  the tool returns.
-- `02_unit_converter/` — richer. Built on the `get_quantities_with_units`
-  tool: one fetch on mount, cached client-side, two coupled dropdowns
-  (quantity → from-unit / to-unit), a numeric input, computed live
-  result, and a flip button. The right shape when the user is going to
-  *interact* with the data, not just read it.
+  `displayName` table. Two files: `list_libraries.py` (launcher on a
+  free port) and `list_libraries.html` (Vue 3 from CDN, calls
+  `/api/tool/get_libraries`). That's the whole pattern — every
+  project-specific page is a copy of this with the tool name and the
+  rendering swapped out.
+
+For a richer shape — interactive controls, client-side caching, no
+round-tripping per keystroke — point your LLM at the SMIP-side artifact
+at `___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html`. It's the
+end state of the round-trip described in step 7 below: a vibe-coded
+localhost page (`get_quantities_with_units` tool + a Vue page with two
+coupled dropdowns and a flip button) ported into a SMIP browser
+script. Read it as "if you do this whole workflow correctly, here's
+what you end up with."
 
 The recommended vibe-coding loop is: build the tool first (step 2), then
 prompt your LLM with something like —
 
 > Build a page in `PAGES/<NN>_<name>/` that uses the `<tool_name>` tool
-> I just added. Follow the shape of `PAGES/02_unit_converter/`: fetch
+> I just added. Follow the shape of `PAGES/01_list_libraries/`: fetch
 > once on mount, cache the result client-side, do all interaction
 > without round-tripping. Two files: `<name>.py` (launcher on a free
 > port) and `<name>.html` (Vue 3 from CDN).
@@ -267,17 +274,16 @@ If it doesn't work first try, the usual suspects are:
 Iterate locally first when you hit one of these — `PAGES/` reloads on
 file save, the SMIP-side IDE doesn't. Fix in `PAGES/`, re-port, re-paste.
 
-> **⚡ Meta note: this entire example is vibe-coded.** Every artifact in
-> the `02_unit_converter` round-trip — the Python tool
-> (`get_quantities_with_units`), the localhost page
-> (`PAGES/02_unit_converter/`), and the SMIP-side browser script
-> (`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html`) — was
-> produced end-to-end by an LLM with the whole repo in context, with
-> only minor course corrections from a human (small UX tweaks like
-> "default to °F → °C" and "add a flip button"). Zero hand-written
-> JavaScript, zero hand-written GraphQL. The loud yellow banners on the
-> tool's docs section, the converter pages, and the MCP wrapper are
-> there as an existence-proof: this is what the loop produces.
+> **⚡ Meta note: the unit-converter round-trip is vibe-coded
+> end-to-end.** The artifact you can still see in the repo —
+> `___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html` — is the
+> SMIP-side output of the full step 1–7 loop. Behind it (now removed
+> from the codebase to keep the starter clean) was a `get_quantities_with_units`
+> Python tool, a localhost page at `PAGES/02_unit_converter/`, and a
+> few minor human course corrections ("default to °F → °C", "add a
+> flip button"). Zero hand-written JavaScript, zero hand-written
+> GraphQL. Read the SMIP-side file as the existence-proof: this is
+> what the loop produces.
 
 ## Anti-patterns to watch for
 

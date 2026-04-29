@@ -1,14 +1,20 @@
 <!--
-  Worked example — SMIP-side browser script ported from
-  PAGES/02_unit_converter/ in this repo. Demonstrates the round-trip
-  described in docs/WORKFLOW.md step 7: vibe-code on localhost first,
-  then port the working page into a SMIP browser-script template and
-  paste it into the SMIP IDE.
+  Worked example — SMIP-side browser script. This is the "you end up with
+  a script like this" artifact for the round-trip described in
+  docs/WORKFLOW.md step 7: vibe-code a localhost page (Python tool +
+  Vue page under PAGES/) first, then port the working page into a SMIP
+  browser-script template and paste it into the SMIP IDE.
 
-  Source page: PAGES/02_unit_converter/unit_converter.html
+  This file is what step 7 produces. The localhost-side artifacts that
+  fed it — a `get_quantities_with_units` Python tool and a
+  `PAGES/02_unit_converter/` Vue page — were vibe-coded against this
+  repo by an LLM with whole-project context, then removed once they had
+  served their purpose. Read this file as the existence-proof of what
+  the loop produces, not as a step you have to reproduce by hand.
+
   Template:    sample_browser_script.html (in this folder)
 
-  Substitution applied:
+  Substitution applied during the port:
     fetch('/api/tool/get_quantities_with_units', { method: 'POST', ... })
       → tiqJSHelper.invokeGraphQLAsync(query)
   Vue CDN <script> tag dropped — Vue is provided ambiently by tiq.core.js
@@ -83,11 +89,11 @@ $user = Factory::getUser();
 
     <div class="vibe-banner">
         ⚡ <strong>This SMIP browser script is vibe-coded.</strong> Ported
-        end-to-end from <code>PAGES/02_unit_converter/</code> by an LLM
-        with the whole VibeCon-SMIP repo in context, using the prompt
-        template in <code>docs/WORKFLOW.md</code> step 7. Zero hand-written
-        JavaScript, zero hand-written GraphQL — just a templated
-        substitution and a few minor follow-up nudges.
+        end-to-end from a localhost VibeCon-SMIP page by an LLM with the
+        whole repo in context, using the prompt template in
+        <code>docs/WORKFLOW.md</code> step 7. Zero hand-written JavaScript,
+        zero hand-written GraphQL — just a templated substitution and a
+        few minor follow-up nudges.
     </div>
 
     <p class="converter-meta">

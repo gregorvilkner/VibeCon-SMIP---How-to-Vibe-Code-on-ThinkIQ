@@ -137,79 +137,94 @@ If you get a 500 from `/api/chat`, the most common cause is missing or
 typo'd Azure OpenAI env vars — check the Flask terminal output, the
 error message names which key is missing.
 
-## Step 5 — Import a library, build your first tool
+## Step 5 — Import a library, build your first tool — with one prompt
 
-The smoke tests are passing. Now make the template *yours* by adding one
-project-specific tool.
+The smoke tests pass. Now make the template *yours* by adding one
+project-specific tool — and notice that the whole point of this template
+is that you don't add it by hand. You prompt for it.
 
-**5a. Drop your library export.** Export a library from ThinkIQ as JSON,
-and drop it into the repo where an LLM with project context can read it.
-A reasonable home is alongside the existing one:
+**5a. Drop your library export.** Export a library from ThinkIQ as JSON
+and drop it somewhere a whole-project-mode LLM will see. A reasonable
+home is alongside the existing one:
 
 ```
 ___SMIP_SAAS_SIDE___/JS SDK Template/library_export.json     # already there for reference
 ```
 
 …or under a new `data/` folder if you want to keep it cleanly separated.
-The point is just that the file lives in the repo so any
-whole-project-mode LLM session sees it as context.
+The point is just that the file lives in the repo so the LLM picks it
+up as context — that's what turns "build me a tool against GraphQL" from
+a generic conversation into one grounded in *your* domain vocabulary.
 
-**5b. Add the method.** Open `SMIP_IO/smip_methods.py` and add a method
-on `SMIPMethods` — copy the shape of `get_libraries`. For example, a
-"list every quantity" tool:
+**5b. One prompt, three edits.** Open the project in any whole-repo
+LLM surface (Claude Desktop with the folder mounted, Cursor or Claude
+Code in the project root, or your editor of choice with the model
+holding every file in context). Paste this prompt verbatim:
 
-```python
-def get_quantities(self):
-    """Return every measurement quantity as a flat list of {id, displayName}."""
-    query = "query GetQuantities { quantities { id displayName } }"
-    resp = self.client.query(query)
-    return ((resp or {}).get("data") or {}).get("quantities") or []
-```
+> Add a `get_quantities` tool to this template. The GraphQL query is:
+>
+> ```graphql
+> query GetQuantities { quantities { id displayName } }
+> ```
+>
+> The tool returns every measurement quantity in the SoR as a flat list
+> of `{id, displayName}` dicts. No parameters.
+>
+> Follow the conventions in this repo — the smoke-test `get_libraries`
+> tool is the shape to copy. Make all three edits in one pass.
 
-**5c. Register it.** Open `SMIP_MCP/smip_tools.py` and add a `TOOL_REGISTRY`
-entry — copy the existing `get_libraries` entry and rename:
+That's it. The LLM, with the whole repo in context, will follow the
+`get_libraries` pattern across the three files the registry fans out
+to. There's no manual "now write the method, now register it, now add
+the MCP wrapper" — the prompt is the spec; the edits are derived.
 
-```python
-{
-    "name": "get_quantities",
-    "summary": "Return every measurement quantity as {id, displayName}.",
-    "description": (
-        "Return every measurement quantity in the SoR as a flat list of "
-        "{id, displayName} dicts. No parameters."
-    ),
-    "parameters": {"type": "object", "properties": {}, "required": []},
-    "ui": {"inputs": []},
-    "fn": lambda m, a: m.get_quantities(),
-},
-```
+**5c. Verify the LLM landed the edits in the right three places.** Pop
+the hood and confirm. The fan-out pattern is the whole reason the
+template exists, and it's worth seeing it once with your own eyes:
 
-**5d. Add the MCP wrapper.** Open `SMIP_MCP/smip_mcp_server.py` and add
-three lines — copy the `get_libraries` wrapper and rename:
+1. **The method** in `SMIP_IO/smip_methods.py` — a `get_quantities`
+   method on `SMIPMethods` that runs the GraphQL query and returns the
+   `quantities` list. Same shape as `get_libraries` right above it.
+2. **The registry entry** in `SMIP_MCP/smip_tools.py` — a new dict in
+   `TOOL_REGISTRY` with `name`, `summary`, `description`, `parameters`,
+   `ui`, and an `fn` lambda dispatching to `m.get_quantities()`. This
+   entry is the single source of truth — `/api/tool/get_quantities`,
+   the OpenAI tool spec for `/api/chat`, and the docs-page section all
+   derive from it.
+3. **The typed MCP wrapper** in `SMIP_MCP/smip_mcp_server.py` — three
+   lines mirroring the `get_libraries` wrapper, so FastMCP can read
+   the Python signature when generating the JSON schema for an MCP
+   client (Claude Desktop, Cursor, etc.).
 
-```python
-@mcp.tool(description=_R["get_quantities"]["description"])
-def get_quantities() -> str:
-    return json.dumps(_call("get_quantities", {}), default=str)
-```
+If any of those three is missing or off-shape, paste the diff back and
+ask the LLM to fix it — the conventions in the repo are dense enough
+that a corrective pass is fast.
 
-(*This wrapper is only consumed when you connect an MCP client like
-Claude Desktop or Cursor — see the bonus section below. Even if you
-never run the MCP server, it costs nothing to keep the wrapper here,
-and adds it to the registry's "future-proof" surface.*)
-
-**5e. Verify.** Restart the Flask app:
+**5d. Restart and test.** Restart the Flask app:
 
 ```
 python SMIP_API/smip_flask_api.py
 ```
 
-Visit <http://localhost:5000/> — your new `get_quantities` section appears
-in the docs page automatically. Visit <http://localhost:5000/chat> and ask:
+Visit <http://localhost:5000/> — a new `GetQuantities` section appears
+in the docs page automatically. Visit <http://localhost:5000/chat> and
+ask:
 
 > What quantities are defined in the SMIP?
 
-The agent picks up the new tool, calls it, and answers. You're now
-operating the template the way it's meant to be operated.
+The agent picks up the new tool, calls it, and answers in natural
+language. You're now operating the template the way it's meant to be
+operated.
+
+**The takeaway.** Read step 5c again. You'd have to do all of that by
+hand the old way: write the method, write the registry entry, write the
+MCP wrapper, hold the conventions in your head, get the GraphQL syntax
+right, keep three files in sync. With a whole-repo LLM and a prompt
+that includes the query, the prompt *is* the work. The starter kit's
+job was to lay the conventions down so densely the LLM has no excuse to
+drift; once that's true, building a tool collapses from "a session" to
+"a prompt." Every project-specific tool you add from here on out
+follows the same loop.
 
 ## Bonus: connect an MCP client (optional)
 

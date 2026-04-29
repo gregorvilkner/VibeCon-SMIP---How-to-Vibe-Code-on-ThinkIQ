@@ -49,56 +49,6 @@ class SMIPMethods:
         resp = self.client.query(query)
         return ((resp or {}).get("data") or {}).get("libraries") or []
 
-    # ---------------------------------------------------------------------
-    # Quantities + units — every quantity with its full unit list and
-    # conversion factors (conversionOffset, conversionMultiplier) so a
-    # caller can do real numeric unit conversions client-side. Used by
-    # PAGES/02_unit_converter/.
-    # ---------------------------------------------------------------------
-    def get_quantities_with_units(self):
-        """Return every measurement quantity with its full unit list,
-        including conversion factors.
-
-        One GraphQL round-trip:
-            query GetQuantitiesWithUnits {
-              quantities {
-                id displayName description quantitySymbol
-                measurementUnits {
-                  id displayName description
-                  conversionOffset conversionMultiplier symbol
-                }
-              }
-            }
-
-        Returns a list of:
-            {
-              "id", "displayName", "description", "quantitySymbol",
-              "measurementUnits": [
-                {
-                  "id", "displayName", "description",
-                  "conversionOffset", "conversionMultiplier", "symbol"
-                }, ...
-              ]
-            }
-
-        Conversion math (client side):
-            base   = (value + fromOffset) * fromMultiplier
-            target = base / toMultiplier - toOffset
-        """
-        query = (
-            "query GetQuantitiesWithUnits { "
-            "  quantities { "
-            "    id displayName description quantitySymbol "
-            "    measurementUnits { "
-            "      id displayName description "
-            "      conversionOffset conversionMultiplier symbol "
-            "    } "
-            "  } "
-            "}"
-        )
-        resp = self.client.query(query)
-        return ((resp or {}).get("data") or {}).get("quantities") or []
-
     # =====================================================================
     # Internal / automation-only methods.
     # Intentionally NOT registered in SMIP_MCP/smip_tools.py — these are
