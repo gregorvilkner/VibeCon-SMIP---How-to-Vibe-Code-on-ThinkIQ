@@ -29,6 +29,14 @@ into the SMIP itself — read the registry to know *what* tools exist, then
 *call* them through MCP to see real data. Source code plus live introspection
 in one chat session.
 
+One downstream effect worth naming: **prompts get shorter**. When the LLM
+has the whole repo as context, you don't spell out file paths, conventions,
+or stack choices — those are all there to read. Talk in intent, not specs.
+The prompts elsewhere in this doc reflect that. If you find yourself
+writing a long technical prompt with file paths and substitution rules,
+that's usually a sign you don't trust the context — fix the context (load
+more of the repo), not the prompt.
+
 ## The recommended path
 
 The temptation, especially with an LLM in the loop, is to skip straight to
@@ -146,16 +154,15 @@ script. Read it as "if you do this whole workflow correctly, here's
 what you end up with."
 
 The recommended vibe-coding loop is: build the tool first (step 2), then
-prompt your LLM with something like —
+prompt your LLM in plain language. Something like:
 
-> Build a page in `PAGES/<NN>_<name>/` that uses the `<tool_name>` tool
-> I just added. Follow the shape of `PAGES/01_list_libraries/`: fetch
-> once on mount, cache the result client-side, do all interaction
-> without round-tripping. Two files: `<name>.py` (launcher on a free
-> port) and `<name>.html` (Vue 3 from CDN).
+> Build me a page that uses the `<tool_name>` tool. Make it look like
+> `01_list_libraries`.
 
-…and you'll get a thin, on-pattern page that uses your tool the way the
-template intends.
+That's enough. The LLM picks up the `PAGES/` convention, the launcher
+pattern, the Vue 3 + CDN choice, and the thin-shell-around-a-tool-call
+shape from the existing samples and the architecture doc. No need to
+hand it file paths or stack choices.
 
 ### 4. Validate the tool surface from an LLM angle
 
@@ -236,24 +243,20 @@ return shape. Future-you will thank present-you for the discipline.
 ### 7. Hand the conversion to your LLM, paste, validate
 
 You have a localhost page that earns its keep (step 5) and the matching
-tool present on the JS SDK side (step 6). Now hand the actual port to
-the same whole-project-mode LLM that built the page in the first place.
-Prompt template:
+tool present on the JS SDK side (step 6). Hand the port to the same
+whole-project-mode LLM that built the page. Same plain-language style
+as step 3 — the LLM already knows what a SMIP browser script is, where
+the templates live, where the GraphQL query lives in `TOOL_REGISTRY`,
+and how to swap in `tiqJSHelper.invokeGraphQLAsync`.
 
-> Port `PAGES/<NN>_<name>/<name>.html` to a SMIP-side browser script.
-> Use `___SMIP_SAAS_SIDE___/Sample Scripts/sample_browser_script.html`
-> as the template (or `sample_display_script.html` if the page is bound
-> to a specific instance via `context.std_inputs.node_id`). Replace the
-> `fetch('/api/tool/<tool_name>')` call with
-> `tiqJSHelper.invokeGraphQLAsync(query)` using the GraphQL query string
-> from the tool's `TOOL_REGISTRY` entry in `SMIP_MCP/smip_tools.py`. Keep
-> the Vue component (data, computed, methods, template, styles)
-> otherwise identical. Drop the `<script src="https://unpkg.com/vue@3/...">`
-> tag — Vue is provided ambiently by `tiq.core.js` in the SMIP runtime.
+> Create a browser script I can copy into the SMIP.
 
-The conversion is largely mechanical because both sides are already
-Vue + GraphQL — the LLM is mostly doing a templated substitution it
-has all the context for.
+That's the literal prompt that produced
+`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html` from
+`PAGES/02_unit_converter/`. The LLM does the templated substitution,
+drops the Vue CDN tag, scopes the CSS, emits the right Joomla/PHP
+preamble — all from context. The conversion is largely mechanical
+because both sides are already Vue + GraphQL.
 
 Then ship it:
 
