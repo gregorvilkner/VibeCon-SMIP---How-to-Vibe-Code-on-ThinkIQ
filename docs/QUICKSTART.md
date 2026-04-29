@@ -159,10 +159,12 @@ a generic conversation into one grounded in *your* domain vocabulary.
 **5b. One prompt, three edits.** Open the project in any whole-repo
 LLM surface (Claude Desktop with the folder mounted, Cursor or Claude
 Code in the project root, or your editor of choice with the model
-holding every file in context). Paste this prompt verbatim:
+holding every file in context). Paste this prompt verbatim — talk to
+it the way you would another developer:
 
-> Add a `get_quantities_with_units` tool to this template. The GraphQL
-> query is:
+> i want to build a unit converter. let's add a tool that gets
+> quantities and units with conversion offsets and factors from
+> graphql:
 >
 > ```graphql
 > query GetQuantitiesWithUnits {
@@ -175,19 +177,14 @@ holding every file in context). Paste this prompt verbatim:
 >   }
 > }
 > ```
->
-> The tool returns every measurement quantity in the SoR as a flat
-> list, each row including its full `measurementUnits` array with the
-> `conversionOffset` and `conversionMultiplier` fields needed to do
-> real numeric unit conversions client-side. No parameters.
->
-> Follow the conventions in this repo — the smoke-test `get_libraries`
-> tool is the shape to copy. Make all three edits in one pass.
 
-That's it. The LLM, with the whole repo in context, will follow the
-`get_libraries` pattern across the three files the registry fans out
-to. There's no manual "now write the method, now register it, now add
-the MCP wrapper" — the prompt is the spec; the edits are derived.
+That's it. Notice what's *not* in the prompt: no "follow the conventions
+in this repo," no "the smoke-test `get_libraries` tool is the shape to
+copy," no "make all three edits in one pass." Those would be cheats —
+hand-holding the LLM through the meta-pattern. With the whole repo in
+context, the LLM reads the existing `get_libraries` tool, infers the
+convention itself, and ports it to the new query. The prompt is the
+intent ("I want to build a unit converter"); the edits are derived.
 
 (*Why this query and not a simpler `quantities { id displayName }`?
 Because this is the exact tool that powers the worked unit-converter
