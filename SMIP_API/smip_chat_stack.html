@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SMIP Automation Chat — Stack</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root { --brand: #126181; }
+        body {
+            padding: 1.5rem 2rem;
+            font-family: sans-serif;
+            background: #f5f7f9;
+            /* Strict 100vh grid so the three-col box + slider always fill
+               exactly the available viewport regardless of zoom / display
+               height. Overflow:hidden prevents the page from scrolling a
+               few spillover pixels at zoom levels that don't land clean. */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .page-title { font-size: 2.2rem; color: var(--brand); padding: .5rem 0; }
+        hr.brand { border-color: var(--brand); border-width: 2px; }
+        .nav-links a { margin-left: .4rem; }
+
+        /* ================================================================
+           STACK LAYOUT — timeline-slider model
+           ================================================================
+           The three-column box stays at a FIXED viewport-sized height.
+           It never grows as history accumulates. The vertical axis of the
+           box is NOT a scroller — it's a fixed viewport. Navigation
+           through chat history happens on a horizontal range slider at
+           the bottom: slider value = cursor position on the segments
+           timeline.
+
+             slider.value = 0           → oldest segment visible at
+                                          bottom-right of R; L/M/rest of R
+                                          empty above it
+             slider.value = N-1 (max)   → newest segment at bottom-right,
+                                          cols filled leftward/upward with
+                                          older segments (the "serpent"
+                                          zig-zag: R-bottom → R-top → M-bottom
+                                          → M-top → L-bottom → L-top)
+             anything between           → same serpent packing, centered on
+                                          the interpolated cursor
+
+           #chat-window is a fixed-height flex column with two children:
+             .chat-cols     fills the vertical space (flex: 1, no scroll)
+             #timeline-nav  a short row holding the range slider + label
+           ================================================================ */
+
+        #chat-window {
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            flex: 1 1 auto;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;               /* no vertical scroll — slider drives nav */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-cols {
+            flex: 1;
+            min-height: 0;                  /* required so flex child can shrink */
+            display: flex;
+            gap: 1.25rem;
+            align-items: stretch;
+        }
+
+        /* ================================================================
+           Three-track timeline model
+           ================================================================
+           Each column is a fixed-height "viewport" onto a full copy of
+           the chat timeline. The three tracks (L / M / R) are identical
+           DOM-wise; we shift each via translateY so L exposes the oldest
+           H pixels of segments, M the middle, R the newest. A 2H pre-pad
+           at the top of every track means the math stays clean at the
+           oldest-view edge (no negative-pixel edge cases; L + M simply
+           land in empty pad region).
+
+             track content:  [ 2H prepad ] [ segments chronologically ]
+             total height T_track = 2H + sum(seg.h)
+
+             translateY_R = T_track - offsetR
+             translateY_M = T_track - offsetR + H
+             translateY_L = T_track - offsetR + 2H
+
+           A segment that straddles a column boundary is the same
+           rendered subtree in two tracks; each track's overflow:hidden
+           clips the parts that don't belong, and the eye reads pixel-
+           exact from bottom-of-prev-col to top-of-next-col. No packer,
+           no seg-merge edge cases.
+           ================================================================ */
+        .chat-col {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;               /* clip the track to the viewport */
+            position: relative;              /* containing block for .timeline-track */
+        }
+        .chat-col + .chat-col {
+            border-left: 1px solid #eef1f3;
+        }
+
+        /* Track inset by .75rem on each side — this is what actually centers
+           the bubbles inside their column. Padding on .chat-col wouldn't do
+           it because an absolute child's containing block is the padding
+           box, so left:0/right:0 ignores parent padding. */
+        .timeline-track {
+            position: absolute;
+            left: .75rem;
+            right: .75rem;
+            bottom: 0;                       /* at translateY 0, track bottom = col bottom */
+            display: flex;
+            flex-direction: column;
+            will-change: transform;
+        }
+        /* Pre-pad JS-sizes to 2 × column clientHeight so oldest-view edges
+           are clean (L + M show pre-pad region, first segment lands at R-bot). */
+        .track-prepad {
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        /* Timeline navigator — horizontal range slider driving cursor.
+           Lives OUTSIDE the chat-window at the very bottom of the page so
+           the input box can float over R's bottom inside the chat area. */
+        #timeline-nav {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: .8rem;
+            margin-top: .6rem;
+            padding: .2rem .25rem 0;
+        }
+        #timeline-slider {
+            flex: 1;
+            accent-color: var(--brand);
+            cursor: pointer;
+        }
+        #timeline-slider:disabled { opacity: .4; }
+        #timeline-label {
+            font-size: .72rem;
+            font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+            color: #6c757d;
+            min-width: 5.5rem;
+            text-align: right;
+            letter-spacing: .04em;
+        }
+        .timeline-end-btn {
+            background: transparent;
+            border: 1px solid #ced4da;
+            color: #6c757d;
+            padding: .2rem .55rem;
+            border-radius: 4px;
+            font-size: .72rem;
+            cursor: pointer;
+            font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+        }
+        .timeline-end-btn:hover:not(:disabled) { background: #eef1f3; }
+        .timeline-end-btn:disabled { opacity: .35; cursor: default; }
+
+        .msg {
+            padding: .6rem 1rem;
+            border-radius: 12px;
+            line-height: 1.5;
+            font-size: .9rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin-bottom: .75rem;
+        }
+        .msg.user {
+            background: var(--brand);
+            color: #fff;
+            border-bottom-right-radius: 3px;
+        }
+        .msg.assistant {
+            background: #e9ecef;
+            color: #212529;
+            border-bottom-left-radius: 3px;
+        }
+        .msg.assistant p { margin: 0 0 .4rem; }
+        .msg.assistant p:last-child { margin-bottom: 0; }
+        .msg.assistant table {
+            border-collapse: collapse;
+            font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+            font-size: .82rem;
+            margin: .25rem 0;
+        }
+        .msg.assistant th, .msg.assistant td {
+            border: 1px solid #adb5bd;
+            padding: .2rem .55rem;
+            text-align: right;
+        }
+        .msg.assistant th:first-child, .msg.assistant td:first-child { text-align: left; }
+        .msg.assistant th { background: #d0d9de; }
+        .msg.assistant code {
+            font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+            font-size: .82rem;
+            background: #d0d9de;
+            padding: .1rem .3rem;
+            border-radius: 3px;
+        }
+        .msg.thinking {
+            background: #e9ecef;
+            color: #6c757d;
+            font-style: italic;
+            border-bottom-left-radius: 3px;
+        }
+        .msg.error {
+            background: #f8d7da;
+            color: #842029;
+            border-bottom-left-radius: 3px;
+        }
+
+        /* Local hh:mm:ss stamp — debug aid, remove once layout is trusted. */
+        .msg-time {
+            display: block;
+            font-size: .68rem;
+            font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+            opacity: .55;
+            text-align: right;
+            margin-top: .3rem;
+            letter-spacing: .03em;
+        }
+
+        /* ================================================================
+           SEGMENT MERGE
+           ================================================================
+           Every message is split into one-or-more .seg nodes — one per
+           block-level child of the parsed markdown (paragraph, heading,
+           code block, table, blockquote), plus one per <li> for lists.
+           All segments of a message share data-msg-id.
+
+           When two adjacent segments in the same column share a msg-id,
+           we drop the corner radii + margin at the join so they read as
+           one continuous bubble. When siblings straddle a column, each
+           fragment stands alone and the eye follows natural left-to-right
+           column reading order (L bottom → M top is the zigzag, same as
+           a newspaper in a bottom-anchored stack).
+           ================================================================ */
+        .msg.seg-merge-top {
+            border-top-left-radius:  0;
+            border-top-right-radius: 0;
+            padding-top: .3rem;
+        }
+        .msg.seg-merge-bot {
+            border-bottom-left-radius:  0;
+            border-bottom-right-radius: 0;
+            margin-bottom: 0;
+            padding-bottom: .3rem;
+        }
+        /* Only the last seg of a message carries a timestamp, but keep
+           this rule as a safety net in case a future edit forgets. */
+        .msg.seg-merge-bot .msg-time { display: none; }
+
+        /* Empty state overlays the full chat-window. */
+        .empty-state {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #adb5bd;
+            pointer-events: none;
+        }
+        .empty-state i { font-size: 2.5rem; margin-bottom: .5rem; }
+        .empty-state p { font-size: .95rem; }
+
+        /* Input floats centered inside R column's footprint.
+           Geometry (for position:absolute inside #chat-window, so 100%
+           = chat-window padding-box width):
+             chat-window horiz padding = 2 × 1.25rem,
+             chat-cols horiz gaps      = 2 × 1.25rem,
+             R col width = (100% - 5rem) / 3,
+             R col right edge is 1.25rem from the padding-box right.
+           For a 1rem gutter on each side of the input inside R col:
+             right  = 1.25rem (R col edge) + 1rem (gutter)           = 2.25rem
+             width  = R col width - 2 × 1rem                         = calc((100% - 5rem) / 3 - 2rem) */
+        #input-row {
+            position: absolute;
+            bottom: 1rem;
+            right: 2.25rem;
+            z-index: 10;
+            width: calc((100% - 5rem) / 3 - 2rem);
+            display: flex;
+            gap: .5rem;
+            align-items: flex-end;
+            background: #fff;
+            padding: .6rem;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+        }
+        #message-input {
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            padding: .5rem .75rem;
+            font-size: .95rem;
+            resize: none;
+            flex: 1;
+            min-width: 0;
+        }
+        #message-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px rgba(18,97,129,.2); }
+
+        .btn-send {
+            background: var(--brand);
+            color: #fff;
+            border: none;
+            padding: .5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: .95rem;
+            white-space: nowrap;
+        }
+        .btn-send:hover:not(:disabled) { background: #0e4f68; }
+        .btn-send:disabled { opacity: .55; cursor: default; }
+
+        .btn-clear-chat {
+            background: transparent;
+            color: #6c757d;
+            border: 1px solid #ced4da;
+            padding: .5rem .8rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: .9rem;
+        }
+        .btn-clear-chat:hover { background: #e9ecef; }
+
+        /* Responsive: hide L first (oldest), then M. Newest always visible.
+           Cascade logic filters on offsetParent so a hidden column is skipped. */
+        @media (max-width: 1200px) {
+            #col-L { display: none; }
+        }
+        @media (max-width: 768px) {
+            #col-M { display: none; }
+            #input-row { width: calc(100% - 2rem); }
+        }
+    </style>
+</head>
+<body>
+<div class="row mb-2">
+    <div class="col-12 d-flex align-items-baseline justify-content-between">
+        <h1 class="page-title">SMIP Automation Chat</h1>
+        <div class="nav-links">
+            <a href="/chat" class="btn btn-sm btn-outline-secondary"><i class="fa fa-comments me-1"></i>Chat</a>
+            <a href="/chat_stack" class="btn btn-sm btn-outline-secondary"><i class="fa fa-layer-group me-1"></i>Stack</a>
+            <a href="/chat_canvas" class="btn btn-sm btn-outline-secondary"><i class="fa fa-vector-square me-1"></i>Canvas</a>
+            <a href="/" class="btn btn-sm btn-outline-secondary"><i class="fa fa-book me-1"></i>Docs</a>
+        </div>
+    </div>
+    <hr class="brand" />
+</div>
+
+<!-- Fixed-height viewport: .chat-cols fills the top region; #timeline-nav
+     is a thin row with the range slider that drives the cursor on the
+     chronological segments timeline. No vertical scroll; navigation is
+     entirely via the slider (value ∈ [0, segments.length - 1]). -->
+<div id="chat-window">
+    <div class="chat-cols">
+        <div class="chat-col" id="col-L">
+            <div class="timeline-track" id="track-L">
+                <div class="track-prepad" id="prepad-L"></div>
+            </div>
+        </div>
+        <div class="chat-col" id="col-M">
+            <div class="timeline-track" id="track-M">
+                <div class="track-prepad" id="prepad-M"></div>
+            </div>
+        </div>
+        <div class="chat-col" id="col-R">
+            <div class="timeline-track" id="track-R">
+                <div class="track-prepad" id="prepad-R"></div>
+            </div>
+        </div>
+    </div>
+    <div id="input-row">
+        <textarea
+            id="message-input"
+            rows="2"
+            placeholder="Ask about a library, type, or other record…"
+        ></textarea>
+        <button class="btn-send" id="send-btn" onclick="sendMessage()">
+            <i class="fa fa-paper-plane me-1"></i> Send
+        </button>
+        <button class="btn-clear-chat" onclick="clearChat()" title="Clear conversation">
+            <i class="fa fa-trash"></i>
+        </button>
+    </div>
+    <div class="empty-state" id="empty-state">
+        <i class="fa fa-flask"></i>
+        <p>Ask anything about libraries, types, or other records in the SMIP instance.</p>
+    </div>
+</div>
+
+<div id="timeline-nav">
+    <button class="timeline-end-btn" id="timeline-start-btn" onclick="jumpToStart()" title="Jump to first message">⇤ start</button>
+    <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" disabled />
+    <button class="timeline-end-btn" id="timeline-end-btn" onclick="jumpToNow()" title="Jump to latest">now ⇥</button>
+    <span id="timeline-label">0 / 0</span>
+</div>
+
+<script>
+    let history = [];
+
+    // Three-track timeline: each column hosts a full copy of the chat
+    // content inside a .timeline-track (prepad + segments). We shift the
+    // tracks via translateY so L/M/R each show a different H-pixel slice
+    // of the same linearized content. One slider value (offsetR = R's
+    // bottom pixel in track-local coords) drives all three translations.
+    const colL = document.getElementById('col-L');
+    const colM = document.getElementById('col-M');
+    const colR = document.getElementById('col-R');
+    const trackL = document.getElementById('track-L');
+    const trackM = document.getElementById('track-M');
+    const trackR = document.getElementById('track-R');
+    const prepadL = document.getElementById('prepad-L');
+    const prepadM = document.getElementById('prepad-M');
+    const prepadR = document.getElementById('prepad-R');
+    const chatWindow = document.getElementById('chat-window');
+    const emptyState = document.getElementById('empty-state');
+    const messageInput = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const inputRow = document.getElementById('input-row');
+
+    // Timeline navigator state.
+    const slider = document.getElementById('timeline-slider');
+    const sliderLabel = document.getElementById('timeline-label');
+    const startBtn = document.getElementById('timeline-start-btn');
+    const endBtn = document.getElementById('timeline-end-btn');
+
+    // offsetR = pixel position of R's bottom edge on the track-local coord
+    // system, where 0 = track top (top of prepad) and T_track = track
+    // bottom (= bottom of newest segment). Slider.value mirrors offsetR.
+    let offsetR = 0;
+
+    // Follow-now: when true, new segments pin offsetR to the track max.
+    // Drags that leave max turn it off; reaching max again turns it on.
+    let followNow = true;
+
+    messageInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    slider.addEventListener('input', () => {
+        offsetR = parseFloat(slider.value);
+        followNow = (offsetR >= parseFloat(slider.max) - 0.5);
+        applyOffset();
+        updateTimelineLabel();
+    });
+
+    // ============================================================
+    // Segment data
+    // ============================================================
+    //
+    // Each segment is an atomic block (paragraph, heading, table, code,
+    // single <li>). Holds a prototype .el; renderAll() clones that .el
+    // into each of the three tracks. Segments of the same message share
+    // data-msg-id so groupify can flatten bubble corners for visual merge
+    // within a track (and naturally across column boundaries).
+    //
+    // segments[] is chronological: [0] oldest → [n-1] newest.
+
+    const segments = [];        // { id, msgId, role, ts, el, h }
+
+    function nowHMS() {
+        const d = new Date();
+        return String(d.getHours()).padStart(2, '0') + ':' +
+               String(d.getMinutes()).padStart(2, '0') + ':' +
+               String(d.getSeconds()).padStart(2, '0');
+    }
+
+    function uid() {
+        return (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+    }
+
+    // Split a message's rendered content into an array of atomic block
+    // nodes. Assistant messages go through `marked` (so markdown stays
+    // intact); lists are exploded into single-<li> sublists so each
+    // bullet can flow across columns independently. User/thinking/error
+    // stay as one block since they're short.
+    function blockify(role, text) {
+        const tmp = document.createElement('div');
+        if (role === 'assistant') {
+            tmp.innerHTML = marked.parse(text);
+        } else {
+            const p = document.createElement('div');
+            p.textContent = text;
+            tmp.appendChild(p);
+        }
+        const blocks = [];
+        for (const child of Array.from(tmp.children)) {
+            if (child.tagName === 'UL' || child.tagName === 'OL') {
+                const tag = child.tagName;
+                let start = 1;
+                for (const li of Array.from(child.children)) {
+                    const sub = document.createElement(tag);
+                    if (tag === 'OL') sub.setAttribute('start', String(start));
+                    sub.appendChild(li);
+                    blocks.push(sub);
+                    start += 1;
+                }
+            } else {
+                blocks.push(child);
+            }
+        }
+        // A totally-empty message would produce zero blocks — ensure
+        // at least one so the packer has something to hold on to.
+        if (blocks.length === 0) {
+            const p = document.createElement('div');
+            p.textContent = text || ' ';
+            blocks.push(p);
+        }
+        return blocks;
+    }
+
+    function makeSegment(msgId, role, ts, blockNode, isLast) {
+        const el = document.createElement('div');
+        el.className = `msg ${role} seg`;
+        el.dataset.msgId = msgId;
+        el.appendChild(blockNode);
+        if (isLast) {
+            const time = document.createElement('span');
+            time.className = 'msg-time';
+            time.textContent = ts;
+            el.appendChild(time);
+        }
+        return { id: uid(), msgId, role, ts, el, h: 0 };
+    }
+
+    // ============================================================
+    // Measurement
+    // ============================================================
+    //
+    // Segment heights depend on column width. Measure once per segment
+    // (or after a viewport resize) by cloning the prototype el into a
+    // hidden slot sized to match a real column, reading getBoundingRect,
+    // and caching seg.h. A +12px cushion accounts for margin-bottom on
+    // .msg that isn't reflected in the slot's own geometry.
+
+    function colHeight() { return colR.clientHeight; }
+    // Measure at the TRACK's rendered width — that matches what segments
+    // actually lay out against inside the columns (track has left/right
+    // inset, bubbles never span the full col-width edge-to-edge).
+    function colWidth()  { return trackR.clientWidth; }
+    // Input reserve = vertical space the floating #input-row occupies
+    // inside R column's bottom, plus a small visual gutter so the newest
+    // bubble doesn't sit flush against the input's top edge. All three
+    // track transforms shift UP by this amount so R's visible viewport
+    // is the column minus the input's footprint.
+    function inputReserve() {
+        if (!inputRow || inputRow.offsetParent === null) return 0;
+        // offsetHeight captures the input-row's border-box; add the
+        // 1rem (16px) bottom gap already baked into its CSS `bottom: 1rem`
+        // plus an 8px breathing gap between bubble and input.
+        return inputRow.offsetHeight + 16 + 8;
+    }
+
+    let measureSlot = null;
+    function ensureMeasureSlot() {
+        if (measureSlot && measureSlot.parentNode) return measureSlot;
+        measureSlot = document.createElement('div');
+        measureSlot.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:-99999px;top:0;';
+        document.body.appendChild(measureSlot);
+        return measureSlot;
+    }
+
+    function measureAll() {
+        const slot = ensureMeasureSlot();
+        slot.style.width = colWidth() + 'px';
+        for (const s of segments) {
+            if (!s.h) {
+                const clone = s.el.cloneNode(true);
+                slot.appendChild(clone);
+                s.h = clone.getBoundingClientRect().height + 12;   // +margin
+                slot.removeChild(clone);
+            }
+        }
+    }
+
+    function remeasureAll() {
+        for (const s of segments) s.h = 0;
+        measureAll();
+    }
+
+    function totalSegHeight() {
+        let t = 0;
+        for (const s of segments) t += s.h;
+        return t;
+    }
+
+    // ============================================================
+    // Rendering — build all three tracks, apply translateY
+    // ============================================================
+
+    // Pre-pad height = 2 × column height. Ensures the oldest-view math
+    // is clean: at slider.min, L + M land entirely in prepad (empty),
+    // first segment sits at R's bottom.
+    function updatePrepads() {
+        const padPx = (2 * colHeight()) + 'px';
+        prepadL.style.height = padPx;
+        prepadM.style.height = padPx;
+        prepadR.style.height = padPx;
+    }
+
+    // Rebuild segment DOM in all three tracks. The prepad is preserved
+    // (first child); segments clone from their prototype el into each
+    // track. O(3N) per call — fine for chat-scale N.
+    function renderAll() {
+        for (const track of [trackL, trackM, trackR]) {
+            // Drop everything after the prepad (first child).
+            const kids = Array.from(track.children).slice(1);
+            for (const k of kids) k.remove();
+            for (const s of segments) {
+                track.appendChild(s.el.cloneNode(true));
+            }
+            groupify(track);
+        }
+    }
+
+    // Flatten corners of adjacent same-msgId segments within a track.
+    // Runs per-track since each track holds its own independent DOM.
+    function groupify(track) {
+        const segs = Array.from(track.children).slice(1);   // skip prepad
+        for (let i = 0; i < segs.length; i++) {
+            const el = segs[i];
+            const id = el.dataset.msgId;
+            const prev = segs[i - 1];
+            const next = segs[i + 1];
+            el.classList.toggle('seg-merge-top', !!(prev && prev.dataset.msgId === id));
+            el.classList.toggle('seg-merge-bot', !!(next && next.dataset.msgId === id));
+        }
+    }
+
+    // Apply the three translateY offsets derived from offsetR.
+    //   T_track = 2H + T     (prepad + segments)
+    //   translateY_R = T_track - offsetR - iH   (all shift up by input reserve)
+    //   translateY_M = translateY_R + H
+    //   translateY_L = translateY_R + 2H
+    // The `- iH` on every track pushes the visible content up by the
+    // input's footprint, so the newest segment's bottom sits above the
+    // floating #input-row instead of behind it. Snake continuity (M-bot
+    // = R-top, L-bot = M-top in track-local coords) is preserved because
+    // all three tracks shift by the same amount.
+    function applyOffset() {
+        const H = colHeight();
+        const T = totalSegHeight();
+        const iH = inputReserve();
+        const totalTrack = 2 * H + T;
+        const yR = totalTrack - offsetR - iH;
+        trackR.style.transform = `translateY(${yR}px)`;
+        trackM.style.transform = `translateY(${yR + H}px)`;
+        trackL.style.transform = `translateY(${yR + 2 * H}px)`;
+    }
+
+    // ============================================================
+    // Slider sync
+    // ============================================================
+
+    function updateTimelineLabel() {
+        const n = segments.length;
+        if (n === 0) { sliderLabel.textContent = '— / —'; return; }
+        // Report which segment's bottom edge is at R-bottom — useful
+        // debug signal for where the cursor lives on the timeline.
+        const H = colHeight();
+        let acc = 2 * H;
+        let cur = 0;
+        for (let i = 0; i < n; i++) {
+            acc += segments[i].h;
+            if (acc >= offsetR) { cur = i; break; }
+            cur = i;
+        }
+        sliderLabel.textContent = (cur + 1) + ' / ' + n;
+    }
+
+    // Sync slider's min/max/value to current state. Called after every
+    // mutation (append / promote / remove / clear / resize). Measures
+    // first so fresh segments have known heights.
+    function syncSlider() {
+        measureAll();
+        const n = segments.length;
+        const H = colHeight();
+        const T = totalSegHeight();
+        if (n === 0) {
+            slider.min = 0;
+            slider.max = 0;
+            slider.value = 0;
+            slider.disabled = true;
+            offsetR = 0;
+        } else {
+            // minOffset: at the "oldest" end of the slider, we want R to
+            // read as FULL of the oldest content from top to bottom, not a
+            // mostly-empty column with a sliver of seg0 at the bottom edge.
+            // R's effective viewport is H - iH (the input reserve eats the
+            // bottom iH pixels of R), so the first (H - iH) pixels of
+            // segment content are what's visible. The track is shifted UP
+            // by iH in applyOffset (yR = totalTrack - offsetR - iH), so
+            // offsetR = 3H - iH puts seg0's top at R's visible top.
+            // When total segment height T ≤ H - iH, everything fits in R
+            // already, so min == max and the slider is disabled.
+            const iH = inputReserve();
+            const H_R = H - iH;
+            const maxOffset = 2 * H + T;
+            const minOffset = (T > H_R) ? (3 * H - iH) : maxOffset;
+            slider.min = minOffset;
+            slider.max = maxOffset;
+            slider.step = 1;
+            if (followNow) offsetR = maxOffset;
+            else offsetR = Math.max(minOffset, Math.min(maxOffset, offsetR));
+            slider.value = offsetR;
+            // Disabled only when there's literally one segment (min === max).
+            slider.disabled = (minOffset === maxOffset);
+        }
+        startBtn.disabled = (n === 0 || offsetR <= parseFloat(slider.min) + 0.5);
+        endBtn.disabled = (n === 0 || offsetR >= parseFloat(slider.max) - 0.5);
+        updateTimelineLabel();
+    }
+
+    function jumpToNow() {
+        followNow = true;
+        syncSlider();
+        applyOffset();
+    }
+
+    function jumpToStart() {
+        followNow = false;
+        offsetR = parseFloat(slider.min) || 0;
+        slider.value = offsetR;
+        syncSlider();
+        applyOffset();
+    }
+
+    // Debounced resize handler — colWidth/colHeight changes invalidate
+    // segment heights and prepad size, so measurements + slider range
+    // + transforms all need recompute.
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            remeasureAll();
+            updatePrepads();
+            syncSlider();
+            applyOffset();
+        }, 150);
+    });
+
+    // ============================================================
+    // Message lifecycle
+    // ============================================================
+
+    function appendMsg(role, text) {
+        emptyState.style.display = 'none';
+        const msgId = uid();
+        const ts = nowHMS();
+        const blocks = blockify(role, text);
+        const newSegs = blocks.map((b, i) =>
+            makeSegment(msgId, role, ts, b, i === blocks.length - 1)
+        );
+        for (const s of newSegs) segments.push(s);
+        renderAll();
+        syncSlider();
+        applyOffset();
+        return msgId;
+    }
+
+    function promoteThinking(msgId, text) {
+        let firstIdx = -1, ts = nowHMS();
+        for (let i = 0; i < segments.length; i++) {
+            if (segments[i].msgId === msgId) {
+                if (firstIdx === -1) { firstIdx = i; ts = segments[i].ts; }
+            }
+        }
+        if (firstIdx === -1) return;
+        while (firstIdx < segments.length && segments[firstIdx].msgId === msgId) {
+            segments.splice(firstIdx, 1);
+        }
+        const blocks = blockify('assistant', text);
+        const newSegs = blocks.map((b, i) =>
+            makeSegment(msgId, 'assistant', ts, b, i === blocks.length - 1)
+        );
+        segments.splice(firstIdx, 0, ...newSegs);
+        renderAll();
+        syncSlider();
+        applyOffset();
+    }
+
+    function removeMsg(msgId) {
+        for (let i = segments.length - 1; i >= 0; i--) {
+            if (segments[i].msgId === msgId) segments.splice(i, 1);
+        }
+        renderAll();
+        syncSlider();
+        applyOffset();
+    }
+
+    async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text) return;
+
+        messageInput.value = '';
+        sendBtn.disabled = true;
+
+        appendMsg('user', text);
+        const thinkingId = appendMsg('thinking', 'Thinking…');
+
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, history }),
+            });
+            const json = await resp.json();
+
+            if (json.ok) {
+                promoteThinking(thinkingId, json.data.response);
+                history = json.data.history;
+            } else {
+                removeMsg(thinkingId);
+                appendMsg('error', 'Error: ' + (json.error || 'Unknown error'));
+            }
+        } catch (err) {
+            removeMsg(thinkingId);
+            appendMsg('error', 'Network error: ' + err.message);
+        } finally {
+            sendBtn.disabled = false;
+            messageInput.focus();
+        }
+    }
+
+    function clearChat() {
+        history = [];
+        segments.length = 0;
+        offsetR = 0;
+        followNow = true;
+        emptyState.style.display = '';
+        renderAll();
+        syncSlider();
+        applyOffset();
+    }
+
+    // Initial setup: size prepads, sync slider, apply transforms.
+    updatePrepads();
+    syncSlider();
+    applyOffset();
+</script>
+</body>
+</html>

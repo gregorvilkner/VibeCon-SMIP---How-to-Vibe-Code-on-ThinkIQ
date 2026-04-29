@@ -1,0 +1,20 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+SMIP_IO/config.json
+!SMIP_IO/config.example.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
