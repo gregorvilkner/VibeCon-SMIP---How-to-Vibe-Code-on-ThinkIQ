@@ -125,17 +125,54 @@ launcher + `.html` Vue file). Scripts live directly under `SCRIPTS/` as
 process, the backend is unaffected, and a buggy page can't break sibling
 pages. See [ARCHITECTURE](ARCHITECTURE.md) for the full launcher pattern.
 
-### 4. Validate the tool surface via /chat
+**Worked examples to point your LLM at.** Two sample pages already in
+`PAGES/` set the shape:
 
-After every meaningful tool registry change, open `/chat` (or
-`/chat_canvas`) and ask the agentic loop questions in natural language.
-This validates the registry from a different angle than your pages do —
-your pages know exactly which tool to call; the agent has to *choose*
-based on the tool descriptions. If the agent can't pick the right tool,
-your descriptions are too vague.
+- `01_list_libraries/` — minimal. One fetch on mount, render an `id` /
+  `displayName` table. The right shape when you just need to see what
+  the tool returns.
+- `02_unit_converter/` — richer. Built on the `get_quantities_with_units`
+  tool: one fetch on mount, cached client-side, two coupled dropdowns
+  (quantity → from-unit / to-unit), a numeric input, computed live
+  result, and a flip button. The right shape when the user is going to
+  *interact* with the data, not just read it.
+
+The recommended vibe-coding loop is: build the tool first (step 2), then
+prompt your LLM with something like —
+
+> Build a page in `PAGES/<NN>_<name>/` that uses the `<tool_name>` tool
+> I just added. Follow the shape of `PAGES/02_unit_converter/`: fetch
+> once on mount, cache the result client-side, do all interaction
+> without round-tripping. Two files: `<name>.py` (launcher on a free
+> port) and `<name>.html` (Vue 3 from CDN).
+
+…and you'll get a thin, on-pattern page that uses your tool the way the
+template intends.
+
+### 4. Validate the tool surface from an LLM angle
+
+After every meaningful tool registry change, exercise the registry from
+an angle where the LLM has to *choose* which tool to call rather than
+being told. This validates the registry differently than your pages do
+— your pages call specific tools by name; the agent has to pick based
+on the tool descriptions. If the agent can't pick the right tool, your
+descriptions are too vague.
+
+Three ways to do this, in order of setup cost:
+
+- **The built-in chat agent** at `/chat` or `/chat_canvas` (requires the
+  Azure OpenAI `.env` from QUICKSTART step 4). Ask a natural-language
+  question and watch the tool calls.
+- **An MCP client** like Claude Desktop or Cursor pointed at
+  `smip_mcp_server.py` (requires the MCP bonus step from QUICKSTART).
+  Same idea, different runtime — same source of truth.
+- **The docs page** at `/` (no extra setup). It generates a "Run" form
+  per registered tool with the registered description visible. Read the
+  description as if you were an LLM seeing it for the first time — would
+  you know when to use this tool? If not, sharpen the description.
 
 This is one of the cheapest, highest-signal feedback loops in the
-template. Use it.
+template. Use whichever surface you have wired up.
 
 ### 5. Round-trip to SMIP-side scripts
 

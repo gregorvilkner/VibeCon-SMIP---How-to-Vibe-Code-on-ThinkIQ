@@ -87,7 +87,15 @@ fetch through `/api/tool/get_libraries`, Vue 3 from CDN).
 If the page loads but the table is empty or shows an error, open the
 browser devtools console — the page logs the failed `fetch` clearly.
 
-## Step 4 — Add the .env and verify the chat agent
+> **You can stop here and still have a useful VibeCon-SMIP.** Steps 1–3
+> give you transport, a tool registry, the Flask app's docs page, the
+> `/api/tool/<name>` dispatch endpoint, and the PAGES + SCRIPTS workflow.
+> That's enough to build automation against your SMIP indefinitely.
+> Steps 4 (the agentic chat agent) and the bonus MCP server section
+> below are **optional layers** — useful, but not required for the
+> template to do its job.
+
+## Step 4 — Add the .env and verify the chat agent (optional)
 
 The `/api/chat` endpoint runs an agentic loop backed by Azure OpenAI: the
 LLM is given your TOOL_REGISTRY as OpenAI tool specs and decides when to call
@@ -184,6 +192,11 @@ def get_quantities() -> str:
     return json.dumps(_call("get_quantities", {}), default=str)
 ```
 
+(*This wrapper is only consumed when you connect an MCP client like
+Claude Desktop or Cursor — see the bonus section below. Even if you
+never run the MCP server, it costs nothing to keep the wrapper here,
+and adds it to the registry's "future-proof" surface.*)
+
 **5e. Verify.** Restart the Flask app:
 
 ```
@@ -198,9 +211,35 @@ in the docs page automatically. Visit <http://localhost:5000/chat> and ask:
 The agent picks up the new tool, calls it, and answers. You're now
 operating the template the way it's meant to be operated.
 
+## Bonus: connect an MCP client (optional)
+
+Pillar 2 of VibeCon-SMIP is the built-in MCP server — `SMIP_MCP/smip_mcp_server.py`.
+It exposes the same `TOOL_REGISTRY` you've been building to any MCP client
+(Claude Desktop, Cursor, custom agents) over stdio or SSE.
+
+For a stdio connection (the default — used by Claude Desktop and most
+local agents), the launch command is just:
+
+```
+python SMIP_MCP/smip_mcp_server.py
+```
+
+Wire that into your MCP client's config as the command for a new server.
+Your client will then see every `@mcp.tool`-wrapped function in
+`smip_mcp_server.py` (including the `get_quantities` you just added) and
+can call them in conversations or workflows.
+
+For SSE deployment (e.g. running on Azure Web App), see the comments at
+the top of `smip_mcp_server.py`.
+
+You can skip this entirely and the rest of the template still works —
+this layer just adds a second LLM-facing surface alongside `/api/chat`.
+
 ## You're up
 
-If all five steps worked, you have a working VibeCon-SMIP. From here:
+If steps 1–3 worked, you have a working VibeCon-SMIP. (Steps 4 and the
+MCP bonus are nice-to-haves; step 5 is where the template starts paying
+back the time you put into it.) From here:
 
 - **[WORKFLOW.md](WORKFLOW.md)** — the recommended way to grow this.
   Strategic / best-practice content: bootstrapping with library exports,

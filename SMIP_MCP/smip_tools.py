@@ -64,6 +64,42 @@ TOOL_REGISTRY = [
         "ui": {"inputs": []},
         "fn": lambda m, a: m.get_libraries(),
     },
+    {
+        # Quantities + units with conversion factors. Powers
+        # PAGES/02_unit_converter/.
+        "name": "get_quantities_with_units",
+        "summary": "Return every quantity with its full unit list and conversion factors (offset + multiplier). No parameters.",
+        "description": (
+            "Return every measurement quantity in the SoR as a flat list, "
+            "each with its `measurementUnits` (id, displayName, description, "
+            "symbol, conversionOffset, conversionMultiplier) so a caller can "
+            "do real numeric unit conversions client-side. No parameters.\n\n"
+            "Used by PAGES/02_unit_converter/ for live unit conversion "
+            "across every quantity defined in the SMIP.\n\n"
+            "Conversion math (client side):\n"
+            "    base   = (value + fromOffset) * fromMultiplier\n"
+            "    target = base / toMultiplier - toOffset\n\n"
+            "The 'base' unit per quantity is the one where "
+            "conversionMultiplier == 1 AND conversionOffset == 0 (e.g. "
+            "kelvin for Temperature, meter for Length, kilogram for Mass). "
+            "Most quantities have exactly one; if a quantity exposes more "
+            "than one (data inconsistency) the converter just trusts the "
+            "factors as given.\n\n"
+            "One GraphQL round-trip:\n"
+            "  query GetQuantitiesWithUnits {\n"
+            "    quantities {\n"
+            "      id displayName description quantitySymbol\n"
+            "      measurementUnits {\n"
+            "        id displayName description\n"
+            "        conversionOffset conversionMultiplier symbol\n"
+            "      }\n"
+            "    }\n"
+            "  }\n"
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "ui": {"inputs": []},
+        "fn": lambda m, a: m.get_quantities_with_units(),
+    },
 ]
 
 

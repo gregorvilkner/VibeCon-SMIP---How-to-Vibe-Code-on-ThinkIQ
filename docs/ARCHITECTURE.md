@@ -138,9 +138,10 @@ drop in a `.py`, import what you need from `SMIP_IO`, and run it.
 
 ## Tools available today
 
-| Tool             | What it does                                                          |
-| ---------------- | --------------------------------------------------------------------- |
-| `get_libraries`  | Smoke-test query — every library as `{id, displayName}`. No parameters |
+| Tool                          | What it does                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `get_libraries`               | Smoke-test query — every library as `{id, displayName}`. No parameters.                                     |
+| `get_quantities_with_units`   | Every measurement quantity with its full unit list and conversion factors. No parameters. Used by the unit-converter sample page. |
 
 This is a starter kit — add project-specific tools as you go. See
 [WORKFLOW](WORKFLOW.md) for the recommended way to grow this list.
@@ -193,9 +194,12 @@ Upstream repo: <https://github.com/gregorvilkner/DevCon-SMIP---How-to-Code-on-Th
 │   └── smip_flask_api_documentation.html, smip_chat[/_stack/_canvas].html
 │
 ├── PAGES/                          # one folder per browser-side page
-│   └── 01_list_libraries/          #   sample page — lists libraries
-│       ├── list_libraries.py       #     launcher (port 5101, /list_libraries)
-│       └── list_libraries.html     #     Vue page (calls /api/tool/get_libraries)
+│   ├── 01_list_libraries/          #   sample page — lists libraries
+│   │   ├── list_libraries.py       #     launcher (port 5101, /list_libraries)
+│   │   └── list_libraries.html     #     Vue page (calls /api/tool/get_libraries)
+│   └── 02_unit_converter/          #   sample page — interactive unit converter
+│       ├── unit_converter.py       #     launcher (port 5102, /unit_converter)
+│       └── unit_converter.html     #     Vue page (calls /api/tool/get_quantities_with_units)
 │
 ├── SCRIPTS/                        # one runnable .py per worker/automation task
 │   └── 01_list_libraries.py        #   sample script — prints every library
