@@ -5,12 +5,14 @@
   Vue page under PAGES/) first, then port the working page into a SMIP
   browser-script template and paste it into the SMIP IDE.
 
-  This file is what step 7 produces. The localhost-side artifacts that
-  fed it — a `get_quantities_with_units` Python tool and a
-  `PAGES/02_unit_converter/` Vue page — were vibe-coded against this
-  repo by an LLM with whole-project context, then removed once they had
-  served their purpose. Read this file as the existence-proof of what
-  the loop produces, not as a step you have to reproduce by hand.
+  This file is what step 7 produces. The Python tool behind it
+  (`get_quantities_with_units`) is the same one you build in
+  QUICKSTART step 5 from a single prompt. The localhost Vue page that
+  fed this port (originally at `PAGES/02_unit_converter/`) was
+  vibe-coded against this repo by an LLM with whole-project context,
+  then removed from the starter once it had served its purpose —
+  rebuilding it on top of the tool is itself a one-prompt task. Read
+  this file as the existence-proof of what the loop produces.
 
   Template:    sample_browser_script.html (in this folder)
 

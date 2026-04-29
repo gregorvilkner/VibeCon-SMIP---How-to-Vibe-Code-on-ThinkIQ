@@ -138,9 +138,10 @@ pages. See [ARCHITECTURE](ARCHITECTURE.md) for the full launcher pattern.
 For a richer shape — interactive controls, client-side caching, no
 round-tripping per keystroke — point your LLM at the SMIP-side artifact
 at `___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html`. It's the
-end state of the round-trip described in step 7 below: a vibe-coded
-localhost page (`get_quantities_with_units` tool + a Vue page with two
-coupled dropdowns and a flip button) ported into a SMIP browser
+end state of the round-trip described in step 7 below: the
+`get_quantities_with_units` tool you built in
+[QUICKSTART step 5](QUICKSTART.md), plus a vibe-coded Vue page with two
+coupled dropdowns and a flip button, ported into a SMIP browser
 script. Read it as "if you do this whole workflow correctly, here's
 what you end up with."
 
@@ -277,13 +278,17 @@ file save, the SMIP-side IDE doesn't. Fix in `PAGES/`, re-port, re-paste.
 > **⚡ Meta note: the unit-converter round-trip is vibe-coded
 > end-to-end.** The artifact you can still see in the repo —
 > `___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html` — is the
-> SMIP-side output of the full step 1–7 loop. Behind it (now removed
-> from the codebase to keep the starter clean) was a `get_quantities_with_units`
-> Python tool, a localhost page at `PAGES/02_unit_converter/`, and a
-> few minor human course corrections ("default to °F → °C", "add a
-> flip button"). Zero hand-written JavaScript, zero hand-written
-> GraphQL. Read the SMIP-side file as the existence-proof: this is
-> what the loop produces.
+> SMIP-side output of the full step 1–7 loop. The Python tool behind
+> it is the same `get_quantities_with_units` you build in
+> [QUICKSTART step 5](QUICKSTART.md) by pasting a single prompt;
+> the localhost Vue page that fed the round-trip
+> (originally at `PAGES/02_unit_converter/`) was deleted from the
+> starter once it had served its purpose, but rebuilding it from the
+> tool is itself a one-prompt task following the loop above. A few
+> minor human course corrections kept the UX honest ("default to
+> °F → °C", "add a flip button"). Zero hand-written JavaScript, zero
+> hand-written GraphQL. Read the SMIP-side file as the existence-proof:
+> this is what the loop produces.
 
 ## Anti-patterns to watch for
 

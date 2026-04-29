@@ -161,14 +161,25 @@ LLM surface (Claude Desktop with the folder mounted, Cursor or Claude
 Code in the project root, or your editor of choice with the model
 holding every file in context). Paste this prompt verbatim:
 
-> Add a `get_quantities` tool to this template. The GraphQL query is:
+> Add a `get_quantities_with_units` tool to this template. The GraphQL
+> query is:
 >
 > ```graphql
-> query GetQuantities { quantities { id displayName } }
+> query GetQuantitiesWithUnits {
+>   quantities {
+>     id displayName description quantitySymbol
+>     measurementUnits {
+>       id displayName description
+>       conversionOffset conversionMultiplier symbol
+>     }
+>   }
+> }
 > ```
 >
-> The tool returns every measurement quantity in the SoR as a flat list
-> of `{id, displayName}` dicts. No parameters.
+> The tool returns every measurement quantity in the SoR as a flat
+> list, each row including its full `measurementUnits` array with the
+> `conversionOffset` and `conversionMultiplier` fields needed to do
+> real numeric unit conversions client-side. No parameters.
 >
 > Follow the conventions in this repo — the smoke-test `get_libraries`
 > tool is the shape to copy. Make all three edits in one pass.
@@ -178,19 +189,30 @@ That's it. The LLM, with the whole repo in context, will follow the
 to. There's no manual "now write the method, now register it, now add
 the MCP wrapper" — the prompt is the spec; the edits are derived.
 
+(*Why this query and not a simpler `quantities { id displayName }`?
+Because this is the exact tool that powers the worked unit-converter
+round-trip referenced in [WORKFLOW.md](WORKFLOW.md) step 7 — the
+SMIP-side end state lives at
+`___SMIP_SAAS_SIDE___/Sample Scripts/unit_converter.html`. The richer
+query is what the converter consumes: nested units with offset and
+multiplier so the math can happen client-side. Building it here
+threads the same tool name end-to-end through the docs.*)
+
 **5c. Verify the LLM landed the edits in the right three places.** Pop
 the hood and confirm. The fan-out pattern is the whole reason the
 template exists, and it's worth seeing it once with your own eyes:
 
-1. **The method** in `SMIP_IO/smip_methods.py` — a `get_quantities`
-   method on `SMIPMethods` that runs the GraphQL query and returns the
-   `quantities` list. Same shape as `get_libraries` right above it.
+1. **The method** in `SMIP_IO/smip_methods.py` — a
+   `get_quantities_with_units` method on `SMIPMethods` that runs the
+   GraphQL query and returns the `quantities` list (each row carrying
+   its nested `measurementUnits`). Same shape as `get_libraries` right
+   above it, just with a deeper query string.
 2. **The registry entry** in `SMIP_MCP/smip_tools.py` — a new dict in
    `TOOL_REGISTRY` with `name`, `summary`, `description`, `parameters`,
-   `ui`, and an `fn` lambda dispatching to `m.get_quantities()`. This
-   entry is the single source of truth — `/api/tool/get_quantities`,
-   the OpenAI tool spec for `/api/chat`, and the docs-page section all
-   derive from it.
+   `ui`, and an `fn` lambda dispatching to
+   `m.get_quantities_with_units()`. This entry is the single source of
+   truth — `/api/tool/get_quantities_with_units`, the OpenAI tool spec
+   for `/api/chat`, and the docs-page section all derive from it.
 3. **The typed MCP wrapper** in `SMIP_MCP/smip_mcp_server.py` — three
    lines mirroring the `get_libraries` wrapper, so FastMCP can read
    the Python signature when generating the JSON schema for an MCP
@@ -206,15 +228,18 @@ that a corrective pass is fast.
 python SMIP_API/smip_flask_api.py
 ```
 
-Visit <http://localhost:5000/> — a new `GetQuantities` section appears
-in the docs page automatically. Visit <http://localhost:5000/chat> and
-ask:
+Visit <http://localhost:5000/> — a new `GetQuantitiesWithUnits` section
+appears in the docs page automatically. Visit
+<http://localhost:5000/chat> and ask:
 
-> What quantities are defined in the SMIP?
+> How many feet are in a meter?
 
-The agent picks up the new tool, calls it, and answers in natural
-language. You're now operating the template the way it's meant to be
-operated.
+The agent picks the new tool (because the description names the
+conversion-factor fields), gets the unit list back, and computes the
+answer. Try a few more — "convert 100°F to Celsius", "list every
+quantity defined in the SMIP" — to see it pick up the same tool from
+different angles. You're now operating the template the way it's meant
+to be operated.
 
 **The takeaway.** Read step 5c again. You'd have to do all of that by
 hand the old way: write the method, write the registry entry, write the
@@ -241,8 +266,8 @@ python SMIP_MCP/smip_mcp_server.py
 
 Wire that into your MCP client's config as the command for a new server.
 Your client will then see every `@mcp.tool`-wrapped function in
-`smip_mcp_server.py` (including the `get_quantities` you just added) and
-can call them in conversations or workflows.
+`smip_mcp_server.py` (including the `get_quantities_with_units` you just
+added) and can call them in conversations or workflows.
 
 For SSE deployment (e.g. running on Azure Web App), see the comments at
 the top of `smip_mcp_server.py`.
