@@ -32,7 +32,10 @@ OpenAI tool spec, docs page section) is derived.
 - **[docs/WORKFLOW.md](docs/WORKFLOW.md)** — how to actually use the
   template well. Bootstrapping with library exports, building tools
   before pages, vibe-coding thin shells, the round-trip back to SMIP-side
-  scripts, the JS SDK parity convention, and the anti-patterns to avoid.
+  scripts, the **two-layer JS SDK** convention (generic SMIP plumbing
+  in `___SMIP_SAAS_SIDE___/SMIP JS SDK/` grows in this repo;
+  domain-specific methods live in `___SMIP_SAAS_SIDE___/JS SDK Template/`),
+  and the anti-patterns to avoid.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — what's where and
   why. Reference for the tool registry mechanics, the PAGES + SCRIPTS
   conventions, the directory layout, and the design choices that thread

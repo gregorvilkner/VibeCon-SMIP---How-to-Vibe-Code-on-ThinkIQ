@@ -208,8 +208,89 @@ Which leads to the parity question…
 ### 6. Keep the JS SDK in lockstep with TOOL_REGISTRY
 
 For step 5 to work, every tool a SMIP-side script needs must also exist
-in the JS SDK Template under `___SMIP_SAAS_SIDE___/JS SDK Template/`.
-Conventions for managing that:
+on the JS side. The JS side is split in two on purpose, and where you
+put a new method depends on what kind of method it is.
+
+**Two folders, one namespace.**
+
+| Folder                                          | Holds                                              | Lifecycle                                                    |
+| ----------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------ |
+| `___SMIP_SAAS_SIDE___/SMIP JS SDK/`             | **Generic**, tenant-agnostic SMIP plumbing         | Grown in *this* repo. Edit here directly.                    |
+| `___SMIP_SAAS_SIDE___/JS SDK Template/`         | **Domain / tenant-specific** methods               | Vendored snapshot of DevCon-SMIP Topic 06. Edits go upstream first, then re-vendor. |
+
+Both libraries declare into the same two globals (`apiDemoMethods` and
+`apiDemoTools`) using the additive merge pattern at the top of
+`02 API Tools.html`:
+
+```js
+var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
+var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
+apiDemoTools.push( /* this library's descriptors */ );
+Object.assign(apiDemoMethods, { /* this library's methods */ });
+```
+
+A consumer SMIP script does two `includeScript` calls — one for
+`smip_js_sdk.api_tools`, one for the tenant SDK — and both sets of
+methods land on the same `apiDemoMethods.<name>` namespace. Order
+doesn't matter. From the consumer's point of view it's one SDK.
+
+**Where does a new method go?** Decide by asking "would another
+SMIP project, on a different tenant, want this exact method?":
+
+- *Yes* → it's generic. Put it in `SMIP JS SDK/`. Examples:
+  `updateAttribute`, `createAttribute`, `updateObject`, `getTypes` — the
+  four already there. New candidates: anything that wraps a stock
+  PostGraphile mutation/query without referencing tenant types,
+  attribute names, or domain vocabulary.
+- *No* → it's tenant-shaped. Put it in `JS SDK Template/`. Examples:
+  the doublet demos in the existing template, plus your project's own
+  `searchHeatNumbersByGrade`, `getStorageShelfChildEquipment`, etc.
+
+**The narrowing pattern.** A tenant method isn't just "another method on
+the same namespace" — it's typically a *narrowing* of a generic one.
+The generic `getObject` has to fetch all ten value-variant columns
+(`boolValue` / `intValue` / `floatValue` / `stringValue` / `datetimeValue`
+/ `intervalValue` / `objectValue` / `enumerationValue` / `geopointValue` /
+`referencedNodeId`) plus `dataType` on every attribute, because it
+doesn't know your schema. A tenant `getMotors` does:
+
+```js
+// Generic — schema-agnostic. Returns all 10 value variants + dataType
+// per attribute. Caller has to find the hp attribute, check its
+// dataType, read floatValue.
+const obj = await apiDemoMethods.getObject({
+  nodeId,
+  includeAttributes: true,
+});
+
+// Tenant — schema-aware. Built once you know "Motor has hp (FLOAT)
+// and snr (STRING)". Returns clean, flat rows.
+const motors = await apiDemoMethods.getMotors({ search: "..." });
+// → [{ id, displayName, hp: 7.5, snr: "MTR-2024-0317" }, ...]
+```
+
+The tenant method's GraphQL fragment fetches `hp { floatValue }` and
+`snr { stringValue }` — not all ten variants — and shapes the result
+into a flat row with the right JS type per field. The library export
+(WORKFLOW step 1) is the input that lets you write that: it tells you
+the type's attribute schema, so you know which value variant to pull
+and how to type the field.
+
+Domain methods are where "Motor has hp and snr" stops being a thing
+the caller has to remember and starts being a thing encoded in one
+place. Build them as you discover stable read/write shapes you reach
+for repeatedly — same incremental pace as growing `TOOL_REGISTRY` on
+the Python side. The generic layer stays the universal fallback for
+exploration and one-offs; the tenant layer is what carries your
+project's actual day-to-day vocabulary.
+
+**Why the split is worth the effort.** It lets the generic plumbing
+*grow in this repo* — every project that uses VibeCon-SMIP contributes
+back to a shared, tenant-agnostic JS SDK, the same way generic helpers
+on `SMIPClient` accumulate over time. Domain-specific stuff stays
+out of the way in the template, which is itself versioned upstream
+in DevCon-SMIP. Without the split, generic helpers would be locked
+inside someone's tenant fork and unavailable to the next project.
 
 **Keep starter tools, hide them from the docs page.** The Python side
 already does this: `SMIPMethods` has plenty of internal-only methods
@@ -218,27 +299,33 @@ already does this: `SMIPMethods` has plenty of internal-only methods
 exist as scaffolding; they're not part of the public, LLM-facing,
 docs-page surface.
 
-The JS SDK should mirror that. The starter tools that ship with the
-template should stay in the JS-side registry — they're a permanent
-smoke test you can always run to answer "is the JS SDK alive?". But
-they should be hidden from the docs page (a `documented: false` flag
-or equivalent), so the docs page only shows the project's actual
-surface, not the template's scaffolding.
+The JS SDK should mirror that. The four generic mutations/queries that
+ship in `SMIP JS SDK/` are the SDK's permanent smoke test — running
+`GetTypesViaJs` from the doc page is the JS equivalent of running
+`get_libraries` from `/api/tool/` to answer "is the wiring alive?".
+Tenant-specific descriptors that ship in the template can stay
+discoverable in `apiDemoTools` but should be hidden from the doc page
+(a `documented: false` flag or equivalent) once you only want to see
+your project's actual surface, not the template's scaffolding.
 
-This convention preserves three things at once:
+This convention preserves four things at once:
 
 - **The smoke test.** Any project can always verify the SMIP-side
-  wiring with the same starter tool.
-- **Python ↔ JS parity.** Both sides have the same "registry but
-  filtered for docs" pattern, so a developer working on either side
-  doesn't have to relearn the convention.
+  wiring with the same starter tools.
+- **Python ↔ JS parity.** Both sides have the same generic-vs-domain
+  split — `SMIPClient`/generic-`SMIPMethods` ↔ `SMIP JS SDK`, and
+  project-specific `SMIPMethods` ↔ `JS SDK Template` — so a developer
+  working on either side doesn't have to relearn the convention.
 - **A clean public contract.** The docs page reflects the project's
   real API, not "here's our project plus everything that came in the
   template box."
+- **A growing generic surface.** New generic SMIP plumbing accumulates
+  in `SMIP JS SDK/` and is reusable across every downstream project.
 
 When you build a new Python tool that you know will round-trip, mirror
 it on the JS side at the same time — same name, same parameters, same
-return shape. Future-you will thank present-you for the discipline.
+return shape, in whichever of the two folders matches its scope.
+Future-you will thank present-you for the discipline.
 
 ### 7. Hand the conversion to your LLM, paste, validate
 

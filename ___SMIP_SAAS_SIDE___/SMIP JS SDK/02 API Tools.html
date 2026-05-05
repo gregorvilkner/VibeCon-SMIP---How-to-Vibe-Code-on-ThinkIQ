@@ -16,11 +16,11 @@
 // a wrong attribute id and a `null` patch silently clears that
 // column; treat the doc page as a developer-only debug surface.
 //
-// Tenant-specific libraries (e.g. `taf_carbon_js_sdk`) include this
-// SDK first, then add their own descriptors and handler methods on
-// top of the same `apiDemoTools` / `apiDemoMethods` globals. The
-// merge is additive — both libraries use the `(typeof X !== 'undefined')
-// ? X : default` guard so load order doesn't matter:
+// Tenant-specific libraries include this SDK first, then add their own
+// descriptors and handler methods on top of the same `apiDemoTools` /
+// `apiDemoMethods` globals. The merge is additive — both libraries use
+// the `(typeof X !== 'undefined') ? X : default` guard so load order
+// doesn't matter:
 //
 //     var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
 //     var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
@@ -30,7 +30,7 @@
 //
 //     <?php
 //     TiqUtilities\Model\Script::includeScript('smip_js_sdk.api_tools');
-//     TiqUtilities\Model\Script::includeScript('taf_carbon_js_sdk.api_tools');
+//     TiqUtilities\Model\Script::includeScript('your_tenant_js_sdk.api_tools');
 //     ?>
 //
 
@@ -48,14 +48,24 @@ apiDemoTools.push(
     //
     // Mutation — UpdateAttribute. ⚠ DESTRUCTIVE: writes the supplied
     // patch fields onto an existing attribute. Pass attributeId and a
-    // patch object (e.g. {"floatValue": 12.5} or {"datetimeValue": null}
-    // to clear a column). Multiple patch keys are allowed.
+    // patch object — one value field per ScalarTypeEnum datatype:
+    //   BOOL → boolValue, INT → intValue, FLOAT → floatValue,
+    //   STRING → stringValue, DATETIME → datetimeValue,
+    //   INTERVAL → intervalValue (IntervalInput object),
+    //   OBJECT → objectValue (stringified JSON),
+    //   ENUMERATION → enumerationValue (+ companion enumerationTypeId /
+    //     enumerationValues / enumerationName),
+    //   GEOPOINT → geopointValue, REFERENCE → referencedNodeId.
+    // Plus the meta `dataType` field (ScalarTypeEnum) to re-type the
+    // attribute. Any field set to null clears the column. Multiple
+    // patch keys are allowed. See the apiDemoMethods.updateAttribute
+    // header below for the full per-field example block.
     //
     {
         key:         "updateAttributeViaJs",
         name:        "UpdateAttributeViaJs",
         category:    "Mutation (JS)",
-        description: "Update an attribute's value(s) by id. DESTRUCTIVE — writes to the SoR. attributeId is a digits-only attribute node id. patch is a JS object with one or more AttributePatch fields: floatValue, datetimeValue, stringValue, enumerationValue, objectValue. Pass `null` for a field to clear that column to GraphQL null; omit a field (or use `undefined` in code) to skip it. The handler is apiDemoMethods.updateAttribute, which lives here in this library.",
+        description: "Update an attribute's value(s) by id. DESTRUCTIVE — writes to the SoR. attributeId is a digits-only attribute node id. patch is a JS object with one or more AttributePatch fields, one per ScalarTypeEnum datatype: boolValue (BOOL), intValue (INT, BigInt — string-encode), floatValue (FLOAT), stringValue (STRING), datetimeValue (DATETIME, ISO-8601), intervalValue (INTERVAL, IntervalInput object), objectValue (OBJECT, stringified JSON), enumerationValue (ENUMERATION), geopointValue (GEOPOINT), referencedNodeId (REFERENCE, BigInt FK). Companion ENUMERATION wiring fields (enumerationTypeId / enumerationValues / enumerationName) and the meta `dataType` field are also on the patch. Pass `null` for any field to clear that column to GraphQL null; omit a field (or use `undefined` in code) to skip it. The handler is apiDemoMethods.updateAttribute, which lives here in this library.",
         via:         "js",
         handler:     "updateAttribute",
         inputs: [
@@ -181,7 +191,7 @@ apiDemoTools.push(
         key:         "getObjectViaJs",
         name:        "GetObjectViaJs",
         category:    "Query (JS)",
-        description: "Fetch a single object by id with optional related-data subselections. nodeId is a digits-only SMIP object node id (REQUIRED). The 4 toggles control what comes back alongside the object's identity fields. includeAttributes (default ON) returns all five attribute value-variants — floatValue / datetimeValue / stringValue / objectValue / enumerationValue — plus enumerationName and relativeName, so any caller can pick the variant that matches the attribute's data_type without a second query. includePartOf adds the parent object (id / displayName / typeId / typeName). includeChildObjects adds direct children. includeType adds a small type pointer. Returns the object dict with whatever subselections are turned on, or null if no object with that id was found. Use this in any type-bound display script that needs to load its own node.",
+        description: "Fetch a single object by id with optional related-data subselections. nodeId is a digits-only SMIP object node id (REQUIRED). The 4 toggles control what comes back alongside the object's identity fields. includeAttributes (default ON) returns ALL TEN attribute value-variants — boolValue (BOOL) / intValue (INT) / floatValue (FLOAT) / stringValue (STRING) / datetimeValue (DATETIME) / intervalValue (INTERVAL — { seconds, minutes, hours, days, months, years }) / objectValue (OBJECT) / enumerationValue (ENUMERATION) / geopointValue (GEOPOINT) / referencedNodeId (REFERENCE) — plus the attribute's dataType (ScalarTypeEnum), enumerationName for human-readable enum labels, and relativeName. The caller routes on attribute.dataType to pick the matching value field without a second query. includePartOf adds the parent object (id / displayName / typeId / typeName). includeChildObjects adds direct children. includeType adds a small type pointer. Returns the object dict with whatever subselections are turned on, or null if no object with that id was found. Use this in any type-bound display script that needs to load its own node.",
         via:         "js",
         handler:     "getObject",
         inputs: [
@@ -246,18 +256,40 @@ Object.assign(apiDemoMethods, {
     // Args shape:
     //   { attributeId, patch }
     //     attributeId — digits-only attribute node id (REQUIRED).
-    //     patch       — plain JS object of fields to set:
-    //                     { floatValue: 12.5 }
-    //                     { datetimeValue: "2026-04-20T10:00:00Z" }
-    //                     { datetimeValue: null }      ← clears to GraphQL null
-    //                     { stringValue: "abc" }
-    //                     { enumerationValue: "1" }
-    //                     { objectValue: '{"x":1}' }   ← stringified JSON for object-type attributes
-    //                     { objectValue: null }        ← clears object-type attribute
+    //     patch       — plain JS object of fields to set on AttributePatch.
+    //                   Value fields — one per ScalarTypeEnum datatype:
+    //                     { boolValue:        true }                            // BOOL
+    //                     { intValue:         "42" }                            // INT      (BigInt — string-encode large ints)
+    //                     { floatValue:       12.5 }                            // FLOAT
+    //                     { stringValue:      "abc" }                           // STRING
+    //                     { datetimeValue:    "2026-04-20T10:00:00Z" }          // DATETIME (ISO-8601)
+    //                     { intervalValue:    { ... IntervalInput ... } }       // INTERVAL (input object, not scalar)
+    //                     { objectValue:      '{"x":1}' }                       // OBJECT   (stringified JSON)
+    //                     { enumerationValue: "1" }                             // ENUMERATION (the selected enum value)
+    //                     { geopointValue:    "..." }                           // GEOPOINT (schema types this as String)
+    //                     { referencedNodeId: "1234" }                          // REFERENCE (BigInt FK to another node)
+    //
+    //                   Any of the above set to `null` clears the column to GraphQL null:
+    //                     { datetimeValue:    null }
+    //                     { objectValue:      null }
+    //                     { intervalValue:    null }
+    //                     { referencedNodeId: null }
+    //
+    //                   ENUMERATION wiring (companion fields, also clear to null):
+    //                     { enumerationTypeId: "5" }     // FK to enumeration type
+    //                     { enumerationValues: [...] }   // candidate set ([String])
+    //                     { enumerationName:   "On" }    // human label for chosen value
+    //
+    //                   Meta:
+    //                     { dataType: "FLOAT" }          // re-types the attribute (ScalarTypeEnum)
+    //
     //                   Multiple patch keys are allowed; each maps to
     //                   one field on the AttributePatch input. Fields
     //                   set to `undefined` are skipped, `null` clears
     //                   the column. At least one key must be present.
+    //                   The companion fields (enumerationName / enumerationValues /
+    //                   enumerationTypeId) and the meta `dataType` field are also
+    //                   on AttributePatch and follow the same skip/null rules.
     //
     // Returns the GraphQL response (full envelope), so callers can
     // inspect `data.updateAttribute.clientMutationId` if they want.
@@ -409,13 +441,24 @@ Object.assign(apiDemoMethods, {
         // the rendered query stays as small as the caller asked for.
         const typeAttrSel = includeTypeAttributes
             ? `typeToAttributeTypes {
-                    id displayName dataType importance
+                    id displayName dataType sourceCategory importance
                   }`
             : '';
 
+        // Mirror the getObject attribute fragment: ALL TEN value fields
+        // plus dataType, so the caller can route on attribute.dataType
+        // (ScalarTypeEnum) and pick the matching value field per
+        // instance attribute. See the getObject docstring below for
+        // the dataType → field mapping.
         const instAttrSel = includeInstanceAttributes
             ? `attributes {
-                        id displayName floatValue datetimeValue stringValue enumerationName
+                        id displayName relativeName dataType dataSource
+                        boolValue intValue floatValue stringValue
+                        datetimeValue
+                        intervalValue { seconds minutes hours days months years }
+                        objectValue
+                        enumerationValue enumerationName
+                        geopointValue referencedNodeId
                       }`
             : '';
 
@@ -463,15 +506,41 @@ Object.assign(apiDemoMethods, {
     // subselections. The everyday workhorse for type-bound display
     // scripts that need to load their own instance.
     //
+    // SCOPE: Static value fields only. DYNAMIC-resolved attributes
+    // (dataSource = TAG / INTERNAL) won't be populated here — their
+    // values live in time series storage and need a future TS-focused
+    // fetcher (getTimeSeries / getRawHistoryDataWithSampling). Route
+    // on attribute.dataSource to know which path to take.
+    //
     // Args shape:
     //   {
     //     nodeId:              String  — digits-only SMIP object node id (REQUIRED).
-    //     includeAttributes:   Boolean — default TRUE. Returns every value variant
-    //                                    on each attribute (floatValue, datetimeValue,
-    //                                    stringValue, objectValue, enumerationValue)
-    //                                    plus enumerationName and relativeName, so
-    //                                    callers can pick the column matching the
-    //                                    attribute's data_type without a second query.
+    //     includeAttributes:   Boolean — default TRUE. Returns ALL TEN value-variant
+    //                                    columns plus dataType on each attribute,
+    //                                    so the caller can route on
+    //                                    `attribute.dataType` (ScalarTypeEnum)
+    //                                    without a second round-trip. Mapping:
+    //
+    //                                      attr.dataType    →  field on attr to read
+    //                                      ───────────────     ──────────────────────
+    //                                      "BOOL"           →  attr.boolValue          (Boolean)
+    //                                      "INT"            →  attr.intValue           (BigInt — string in JSON)
+    //                                      "FLOAT"          →  attr.floatValue         (Float)
+    //                                      "STRING"         →  attr.stringValue        (String)
+    //                                      "DATETIME"       →  attr.datetimeValue      (Datetime, ISO-8601)
+    //                                      "INTERVAL"       →  attr.intervalValue      (Interval object —
+    //                                                          { seconds, minutes, hours, days, months, years };
+    //                                                          NOT the IntervalInput shape used on write)
+    //                                      "OBJECT"         →  attr.objectValue        (JSON)
+    //                                      "ENUMERATION"    →  attr.enumerationValue   (String — selected value)
+    //                                                       +  attr.enumerationName    (String — human label)
+    //                                      "GEOPOINT"       →  attr.geopointValue      (String — schema types it as String)
+    //                                      "REFERENCE"      →  attr.referencedNodeId   (BigInt — string in JSON; FK to another node)
+    //
+    //                                    Empty value fields come back as null.
+    //                                    relativeName and id/displayName are also returned
+    //                                    on every attribute regardless of dataType.
+    //
     //     includePartOf:       Boolean — default FALSE. Adds the parent object (id /
     //                                    displayName / typeId / typeName).
     //     includeChildObjects: Boolean — default FALSE. Adds direct children
@@ -487,9 +556,9 @@ Object.assign(apiDemoMethods, {
     // GraphQL with the optional fields tacked on.
     //
     // Use this in any type-bound display script that needs to load
-    // its own node from `context.std_inputs.node_id`. For loading a
-    // PSD Result with the PSD-specific flat-field shaping, use
-    // taf_carbon_js_sdk's `getPsdResults` instead.
+    // its own node from `context.std_inputs.node_id`. For domain-specific
+    // result shaping (e.g. flattening a PSD Result into row form),
+    // use a tenant-specific SDK method on top of this generic fetch.
     getObject: async function(args){
         args = args || {};
         const nodeId              = String(args.nodeId || '').trim();
@@ -504,11 +573,27 @@ Object.assign(apiDemoMethods, {
 
         // Each subselection is its own conditional fragment, spliced in
         // only when the toggle is on — keeps the round-trip lean.
+        //
+        // The attributes fragment returns ALL TEN value-variant columns
+        // plus dataType, so the caller can read attribute.dataType
+        // (ScalarTypeEnum: BOOL / INT / FLOAT / STRING / DATETIME /
+        // INTERVAL / OBJECT / ENUMERATION / GEOPOINT / REFERENCE) and
+        // pick the matching value field — without a second round-trip
+        // and without guessing. Empty value fields come back as null.
+        // intervalValue is an Interval object on read (not the
+        // IntervalInput shape used on write); BigInt fields (intValue,
+        // referencedNodeId) come across as strings in JSON. The
+        // enumerationName companion stays alongside enumerationValue
+        // for human-readable rendering of ENUMERATION attributes.
         const attrsSel = includeAttributes
             ? `attributes {
-                    id displayName relativeName
-                    floatValue datetimeValue stringValue objectValue
+                    id displayName relativeName dataType dataSource
+                    boolValue intValue floatValue stringValue
+                    datetimeValue
+                    intervalValue { seconds minutes hours days months years }
+                    objectValue
                     enumerationValue enumerationName
+                    geopointValue referencedNodeId
                   }`
             : '';
 

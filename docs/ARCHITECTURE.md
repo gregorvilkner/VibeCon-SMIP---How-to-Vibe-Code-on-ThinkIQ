@@ -39,10 +39,19 @@ SCRIPTS/      worker / automation scripts — runnable .py per task
                                       (migrations, model refactors, data
                                       fixups). Headless; no Vue, no Flask.
 
-___SMIP_SAAS_SIDE___/   reference material that lives on the SMIP side
+___SMIP_SAAS_SIDE___/   reference material + SMIP-side libraries
   GraphQL Schema/         introspection export of the SMIP GraphQL API
-  JS SDK Template/        SMIP-side templates (Guzzle client, API templates,
-                          library exports, future display-script conversions)
+  SMIP Exports/           drop-zone for SMIP library export JSONs (type
+                          libraries, script libraries) used as LLM context
+  SMIP JS SDK/            generic, tenant-agnostic JS SDK — grown in this
+                          repo. apiDemoMethods + apiDemoTools wrappers
+                          around generic SMIP mutations/queries
+                          (updateAttribute, createAttribute, updateObject,
+                          getTypes). The home for new generic SMIP plumbing.
+  JS SDK Template/        domain/tenant-specific JS SDK — vendored snapshot
+                          of DevCon-SMIP Topic 06 / Take 4. Per-project
+                          methods live here (and merge additively into the
+                          same apiDemoMethods / apiDemoTools globals).
   Sample Scripts/         vendored SMIP browser-script + display-script
                           templates — the conversion targets for PAGES.
                           Vibe-code a page in Python under PAGES/, then port
@@ -148,6 +157,55 @@ on purpose. Add project-specific tools as you go; the
 from a single LLM prompt against your library export. See
 [WORKFLOW](WORKFLOW.md) for the recommended way to grow this list.
 
+## The two-layer JS SDK on the SMIP side
+
+`___SMIP_SAAS_SIDE___/` holds two JS SDK folders, deliberately split along
+a generic/domain seam:
+
+| Folder            | Scope                              | Lifecycle                                                    |
+| ----------------- | ---------------------------------- | ------------------------------------------------------------ |
+| `SMIP JS SDK/`    | **Generic** SMIP plumbing          | Grows in *this* repo. Edit here directly.                    |
+| `JS SDK Template/`| **Domain / tenant-specific** tools | Vendored snapshot from DevCon-SMIP. Edits go upstream first. |
+
+The split mirrors the Python side:
+
+- `SMIP JS SDK/` is the JS analogue of the generic helpers on `SMIPClient`
+  and `SMIPMethods` (low-level GraphQL wrappers like `updateAttribute`,
+  `createAttribute`, `updateObject`, `getTypes`) — things that are useful
+  on every tenant, regardless of the model.
+- `JS SDK Template/` is the JS analogue of project-specific methods on
+  `SMIPMethods` (`get_libraries`, `get_quantities_with_units`, …) — built
+  for a particular tenant's vocabulary.
+
+Both libraries use the same **additive merge pattern** at the top of their
+`02 API Tools.html`:
+
+```js
+var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
+var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
+apiDemoTools.push( /* this library's descriptors */ );
+Object.assign(apiDemoMethods, { /* this library's methods */ });
+```
+
+Whichever loads first establishes the globals; later loads merge their
+contributions in. A consumer SMIP script does two `includeScript` calls —
+one for `smip_js_sdk.api_tools`, one for the tenant SDK — and ends up with
+both sets of methods on a single `apiDemoMethods` namespace and both sets
+of descriptors on a single `apiDemoTools` catalog. Order doesn't matter.
+
+**Why this matters for the round-trip.** When you port a Python
+`SMIPMethods` method into the SMIP-side world (WORKFLOW step 5), it lands
+in one of these two folders depending on what it is:
+
+- A new generic helper that any SMIP project would benefit from →
+  `SMIP JS SDK/` (and grows the in-repo generic surface).
+- A tenant-specific method tied to your library's types and attributes →
+  `JS SDK Template/` (and stays tenant-shaped).
+
+Over time, `SMIP JS SDK/` becomes the JS-side counterpart of the generic
+parts of `SMIP_IO/smip_methods.py`, and `JS SDK Template/` becomes the
+counterpart of the tenant-specific parts.
+
 ## Sample SMIP browser scripts (vendored)
 
 Under `___SMIP_SAAS_SIDE___/Sample Scripts/`:
@@ -203,9 +261,16 @@ Upstream repo: <https://github.com/gregorvilkner/DevCon-SMIP---How-to-Code-on-Th
 ├── SCRIPTS/                        # one runnable .py per worker/automation task
 │   └── 01_list_libraries.py        #   sample script — prints every library
 │
-└── ___SMIP_SAAS_SIDE___/           # SMIP-side reference material
+└── ___SMIP_SAAS_SIDE___/           # SMIP-side reference material + libraries
     ├── GraphQL Schema/             #   introspection export of the SMIP GraphQL API
-    ├── JS SDK Template/            #   vendored snapshot of DevCon-SMIP Topic 06 / Take 4
+    ├── SMIP Exports/               #   drop-zone for SMIP library export JSONs
+    │                               #   (type libraries / script libraries used as LLM context)
+    ├── SMIP JS SDK/                #   GENERIC, tenant-agnostic JS SDK — grown in this repo
+    │                               #   apiDemoMethods + apiDemoTools wrappers around generic
+    │                               #   SMIP mutations/queries (updateAttribute, createAttribute,
+    │                               #   updateObject, getTypes). Edit here directly.
+    ├── JS SDK Template/            #   DOMAIN/TENANT-SPECIFIC JS SDK
+    │                               #   vendored snapshot of DevCon-SMIP Topic 06 / Take 4
     │                               #   (https://github.com/gregorvilkner/DevCon-SMIP---How-to-Code-on-ThinkIQ)
     │                               #   edits go upstream first, then re-vendor
     └── Sample Scripts/             #   vendored SMIP browser-script samples

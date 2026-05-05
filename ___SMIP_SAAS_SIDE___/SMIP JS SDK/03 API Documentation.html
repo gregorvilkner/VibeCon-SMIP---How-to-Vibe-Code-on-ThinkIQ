@@ -18,8 +18,8 @@
     // Pulls in the descriptor catalog (apiDemoTools[]) — see smip_js_sdk.api_tools.
     // SMIP JS SDK contributes generic mutation helpers via apiDemoMethods but
     // adds NO descriptor entries; this page renders an empty tool list unless
-    // a tenant-specific library has also been included before it (e.g.
-    // taf_carbon_js_sdk.api_tools), in which case those descriptors show up.
+    // a tenant-specific library has also been included before it, in which
+    // case those descriptors show up.
     TiqUtilities\Model\Script::includeScript('smip_js_sdk.api_tools');
 
 ?>
@@ -123,8 +123,8 @@
         <code>apiDemoMethods.createAttribute</code>,
         <code>apiDemoMethods.updateObject</code>) but adds no descriptor
         entries to <code>apiDemoTools</code>. Include a tenant-specific
-        library (e.g. <code>taf_carbon_js_sdk.api_tools</code>) on top of
-        this one to populate this documentation page.
+        tenant-specific library on top of this one to populate this
+        documentation page.
     </div>
 </div>
 

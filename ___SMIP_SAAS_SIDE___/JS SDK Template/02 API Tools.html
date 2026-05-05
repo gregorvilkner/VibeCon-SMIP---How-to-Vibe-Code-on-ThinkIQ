@@ -85,7 +85,10 @@
 //   showJsonPreview — if true, renders a live JSON-validation <pre> below the input.
 //
 
-var apiDemoTools = [
+var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
+var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
+
+apiDemoTools.push(
 
     //
     // Plumbing doublet — Echo
@@ -217,7 +220,7 @@ var apiDemoTools = [
         }
     }
 
-];
+);
 
 
 //
@@ -238,7 +241,7 @@ var apiDemoTools = [
 // when the PHP function would do "query GraphQL → fan out → merge → return",
 // you can do the same here without bouncing through PHP.
 //
-var apiDemoMethods = {
+Object.assign(apiDemoMethods, {
 
     // SearchLibraryWithCountsViaJs — search libraries by name and decorate
     // each matched row with typesCount and scriptsCount.
@@ -300,6 +303,6 @@ var apiDemoMethods = {
         }));
     }
 
-};
+});
 
 </script>
