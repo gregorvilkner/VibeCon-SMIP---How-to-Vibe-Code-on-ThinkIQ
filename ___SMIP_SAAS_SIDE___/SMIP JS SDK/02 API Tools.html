@@ -1,0 +1,545 @@
+<script>
+//
+// SMIP JS SDK — generic, tenant-agnostic apiDemoMethods helpers + a
+// minimal apiDemoTools catalog of generic queries and mutations.
+//
+// What this library carries:
+//   • apiDemoMethods._buildPatchLiteral(patch)            — patch builder
+//   • apiDemoMethods.updateAttribute({ attributeId, patch }) — generic mutation
+//   • apiDemoMethods.createAttribute({ ownerId, attributeTypeDisplayName }) — generic mutation
+//   • apiDemoMethods.updateObject({ id, patch })         — generic mutation
+//   • apiDemoMethods.getTypes(args)                       — generic tiqTypes query
+//   • apiDemoMethods.getObject(args)                      — generic single-object fetch
+//
+// Plus matching apiDemoTools descriptors so the doc page renders an
+// interactive form for each one. The mutation forms are dangerous —
+// a wrong attribute id and a `null` patch silently clears that
+// column; treat the doc page as a developer-only debug surface.
+//
+// Tenant-specific libraries (e.g. `taf_carbon_js_sdk`) include this
+// SDK first, then add their own descriptors and handler methods on
+// top of the same `apiDemoTools` / `apiDemoMethods` globals. The
+// merge is additive — both libraries use the `(typeof X !== 'undefined')
+// ? X : default` guard so load order doesn't matter:
+//
+//     var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
+//     var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
+//     Object.assign(apiDemoMethods, { /* this library's methods */ });
+//
+// To consume both layers from a display script:
+//
+//     <?php
+//     TiqUtilities\Model\Script::includeScript('smip_js_sdk.api_tools');
+//     TiqUtilities\Model\Script::includeScript('taf_carbon_js_sdk.api_tools');
+//     ?>
+//
+
+// Additive globals — load order doesn't matter; later loads merge in.
+var apiDemoTools   = (typeof apiDemoTools   !== 'undefined') ? apiDemoTools   : [];
+var apiDemoMethods = (typeof apiDemoMethods !== 'undefined') ? apiDemoMethods : {};
+
+
+// =====================================================================
+// Descriptor catalog — what shows up in the doc page
+// =====================================================================
+
+apiDemoTools.push(
+
+    //
+    // Mutation — UpdateAttribute. ⚠ DESTRUCTIVE: writes the supplied
+    // patch fields onto an existing attribute. Pass attributeId and a
+    // patch object (e.g. {"floatValue": 12.5} or {"datetimeValue": null}
+    // to clear a column). Multiple patch keys are allowed.
+    //
+    {
+        key:         "updateAttributeViaJs",
+        name:        "UpdateAttributeViaJs",
+        category:    "Mutation (JS)",
+        description: "Update an attribute's value(s) by id. DESTRUCTIVE — writes to the SoR. attributeId is a digits-only attribute node id. patch is a JS object with one or more AttributePatch fields: floatValue, datetimeValue, stringValue, enumerationValue, objectValue. Pass `null` for a field to clear that column to GraphQL null; omit a field (or use `undefined` in code) to skip it. The handler is apiDemoMethods.updateAttribute, which lives here in this library.",
+        via:         "js",
+        handler:     "updateAttribute",
+        inputs: [
+            { key: "attributeId", argName: "attributeId", label: "Attribute id (digits): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "patch", argName: "patch", label: "Patch (JSON object): ", type: "text",
+              default: '{"floatValue": 0}',
+              parse: "json", showJsonPreview: true }
+        ],
+        output: { kind: "single" }
+    },
+
+    //
+    // Mutation — CreateAttribute. Creates a fresh attribute on an
+    // existing owner object by attribute-type displayName. Used when
+    // an attribute slot hasn't been auto-instantiated yet on a fresh
+    // object.
+    //
+    {
+        key:         "createAttributeViaJs",
+        name:        "CreateAttributeViaJs",
+        category:    "Mutation (JS)",
+        description: "Create a new attribute on an owner object by attribute-type displayName. Returns the freshly-created { id, displayName }. Useful when an attribute slot hasn't been auto-instantiated on a freshly-created instance — call this first, then call UpdateAttribute on the returned id. ownerId is a digits-only object node id; attributeTypeDisplayName is the exact displayName of the attribute type to instantiate (matched against the type's typeToAttributeTypes).",
+        via:         "js",
+        handler:     "createAttribute",
+        inputs: [
+            { key: "ownerId", argName: "ownerId", label: "Owner id (digits): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "attributeTypeDisplayName", argName: "attributeTypeDisplayName", label: "Attribute type displayName: ", type: "text",
+              default: '',
+              parse: "raw" }
+        ],
+        output: { kind: "single" }
+    },
+
+    //
+    // Mutation — UpdateObject. ⚠ DESTRUCTIVE: writes the supplied
+    // patch fields onto an existing object. Common patches:
+    //   { "importance": -260420 }   — sort key (lower = first)
+    //   { "displayName": "..." }    — rename
+    //   { "description": "..." }    — set/clear description
+    //
+    {
+        key:         "updateObjectViaJs",
+        name:        "UpdateObjectViaJs",
+        category:    "Mutation (JS)",
+        description: "Update an object's properties by id. DESTRUCTIVE — writes to the SoR. id is a digits-only object node id. patch is a JS object with one or more ObjectPatch fields: importance (int), displayName (string), description (string). Pass `null` for a field to clear it; omit a field to skip it. Common at TAF Carbon for setting `importance: -<yymmdd>` so newest runs sort to the top of instance lists.",
+        via:         "js",
+        handler:     "updateObject",
+        inputs: [
+            { key: "id", argName: "id", label: "Object id (digits): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "patch", argName: "patch", label: "Patch (JSON object): ", type: "text",
+              default: '{"importance": 0}',
+              parse: "json", showJsonPreview: true }
+        ],
+        output: { kind: "single" }
+    },
+
+    //
+    // Query — GetTypes. List tiqTypes with optional filters and
+    // optional related-data subselections. Each include-* toggle adds
+    // a fragment to the GraphQL query (more data = more cost), so the
+    // default-OFF posture keeps the round-trip lean for "just show me
+    // the types" use cases. Two search strings (typeNameSearch +
+    // instanceNameSearch) push case-insensitive substring filters
+    // server-side via PostGraphile's includesInsensitive.
+    //
+    // Use this to:
+    //   * Enumerate a tenant's type system (typeNameSearch='').
+    //   * Find a type's attribute schema before spawning instances
+    //     (typeNameSearch='Lignin Lot', includeTypeAttributes=true).
+    //   * List instances of a type ('LA Storage', includeInstances=true).
+    //   * Scope to a sample by name ('LA Storage', includeInstances=true,
+    //     instanceNameSearch='LA-260424', includeInstanceAttributes=true).
+    //   * Walk supertype/subtype/composition relationships.
+    //
+    {
+        key:         "getTypesViaJs",
+        name:        "GetTypesViaJs",
+        category:    "Query (JS)",
+        description: "List tiqTypes with optional filters and optional related-data subselections. typeNameSearch filters types by case-insensitive displayName substring; empty input returns every type. The 6 toggles add subselections — each is more data over the wire, defaults all OFF for a lean response. Use this to enumerate a tenant's type system, find a type's attribute schema before spawning instances (set includeTypeAttributes), list instances of a type (set includeInstances + optional instanceNameSearch + optional includeInstanceAttributes), or walk supertype / subtype / composition. Returns the raw tiqTypes list with whatever subselections are turned on. The shape is intentionally not flattened — this is an exploration tool, not a row-builder.",
+        via:         "js",
+        handler:     "getTypes",
+        inputs: [
+            { key: "typeNameSearch", argName: "typeNameSearch", label: "Type name search (substring, optional): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "includeTypeAttributes", argName: "includeTypeAttributes", label: "Include type attributes (typeToAttributeTypes)? ", type: "checkbox",
+              default: false },
+            { key: "includeInstances", argName: "includeInstances", label: "Include instances (objectsByTypeId)? ", type: "checkbox",
+              default: false },
+            { key: "instanceNameSearch", argName: "instanceNameSearch", label: "Instance name search (substring, optional, only when instances on): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "includeInstanceAttributes", argName: "includeInstanceAttributes", label: "Include attributes on each instance? ", type: "checkbox",
+              default: false },
+            { key: "includeSubTypes", argName: "includeSubTypes", label: "Include subtypes? ", type: "checkbox",
+              default: false },
+            { key: "includeSuperType", argName: "includeSuperType", label: "Include supertype (subTypeOf)? ", type: "checkbox",
+              default: false },
+            { key: "includeComposition", argName: "includeComposition", label: "Include composition (childEquipment)? ", type: "checkbox",
+              default: false }
+        ],
+        output: { kind: "array" }
+    },
+
+    //
+    // Query — GetObject. Fetch a single object by id with optional
+    // related-data subselections. The everyday workhorse for type-bound
+    // display scripts that need to load their own instance — pass
+    // context.std_inputs.node_id and pick which slices of the graph
+    // come along: attributes (default ON, all five value-variant
+    // columns + relativeName), parent (partOf), children
+    // (childObjects), and type (a small {id displayName relativeName}
+    // pointer). Mirrors the Python pattern of "get this object plus
+    // a couple of related rows in one round-trip".
+    //
+    {
+        key:         "getObjectViaJs",
+        name:        "GetObjectViaJs",
+        category:    "Query (JS)",
+        description: "Fetch a single object by id with optional related-data subselections. nodeId is a digits-only SMIP object node id (REQUIRED). The 4 toggles control what comes back alongside the object's identity fields. includeAttributes (default ON) returns all five attribute value-variants — floatValue / datetimeValue / stringValue / objectValue / enumerationValue — plus enumerationName and relativeName, so any caller can pick the variant that matches the attribute's data_type without a second query. includePartOf adds the parent object (id / displayName / typeId / typeName). includeChildObjects adds direct children. includeType adds a small type pointer. Returns the object dict with whatever subselections are turned on, or null if no object with that id was found. Use this in any type-bound display script that needs to load its own node.",
+        via:         "js",
+        handler:     "getObject",
+        inputs: [
+            { key: "nodeId", argName: "nodeId", label: "Node id (digits): ", type: "text",
+              default: '',
+              parse: "raw" },
+            { key: "includeAttributes", argName: "includeAttributes", label: "Include attributes? ", type: "checkbox",
+              default: true },
+            { key: "includePartOf", argName: "includePartOf", label: "Include partOf (parent object)? ", type: "checkbox",
+              default: false },
+            { key: "includeChildObjects", argName: "includeChildObjects", label: "Include childObjects? ", type: "checkbox",
+              default: false },
+            { key: "includeType", argName: "includeType", label: "Include type pointer? ", type: "checkbox",
+              default: false }
+        ],
+        output: { kind: "single" }
+    }
+
+);
+
+
+// =====================================================================
+// apiDemoMethods — the four mutation helpers (always direct-callable,
+// also handlers for the three Mutation descriptors above) plus the
+// getTypes and getObject query handlers.
+// =====================================================================
+
+Object.assign(apiDemoMethods, {
+
+    // Build a GraphQL `patch: { ... }` literal from a JS object.
+    //
+    // Distinguishes three states per field:
+    //   • undefined  — skip entirely (field doesn't appear in patch).
+    //   • null       — emit `field: null` (clears the column to GraphQL null).
+    //   • everything else — JSON-encode and emit as the value.
+    //
+    // Numbers are emitted bare (so float values arrive as floats, not
+    // string literals); strings get JSON.stringify quoting; booleans
+    // emit `true` / `false`. This is the same semantics the Python
+    // `update_attribute` uses with its `_UNSET` sentinel for skip vs.
+    // explicit-null. Returns the rendered `{ ... }` literal as a string,
+    // ready to interpolate into a mutation body.
+    _buildPatchLiteral: function(patch){
+        const parts = [];
+        for (const key of Object.keys(patch || {})) {
+            const v = patch[key];
+            if (v === undefined) continue;             // skip
+            if (v === null)        { parts.push(`${key}: null`); continue; }
+            if (typeof v === 'number' || typeof v === 'boolean') {
+                parts.push(`${key}: ${v}`);
+            } else {
+                // String, or anything else — round-trip through JSON.stringify
+                // so embedded quotes / backslashes are properly escaped.
+                parts.push(`${key}: ${JSON.stringify(String(v))}`);
+            }
+        }
+        return `{ ${parts.join(', ')} }`;
+    },
+
+    // Update an attribute's value(s) by id.
+    //
+    // Args shape:
+    //   { attributeId, patch }
+    //     attributeId — digits-only attribute node id (REQUIRED).
+    //     patch       — plain JS object of fields to set:
+    //                     { floatValue: 12.5 }
+    //                     { datetimeValue: "2026-04-20T10:00:00Z" }
+    //                     { datetimeValue: null }      ← clears to GraphQL null
+    //                     { stringValue: "abc" }
+    //                     { enumerationValue: "1" }
+    //                     { objectValue: '{"x":1}' }   ← stringified JSON for object-type attributes
+    //                     { objectValue: null }        ← clears object-type attribute
+    //                   Multiple patch keys are allowed; each maps to
+    //                   one field on the AttributePatch input. Fields
+    //                   set to `undefined` are skipped, `null` clears
+    //                   the column. At least one key must be present.
+    //
+    // Returns the GraphQL response (full envelope), so callers can
+    // inspect `data.updateAttribute.clientMutationId` if they want.
+    updateAttribute: async function(args){
+        const attributeId = String((args && args.attributeId) || '').trim();
+        const patch       = (args && args.patch) || {};
+        if (!attributeId || !/^\d+$/.test(attributeId)) {
+            throw new Error('updateAttribute: attributeId must be digits-only; got ' + JSON.stringify(attributeId));
+        }
+        if (Object.keys(patch).length === 0) {
+            throw new Error('updateAttribute: patch must contain at least one field');
+        }
+        const patchLit = apiDemoMethods._buildPatchLiteral(patch);
+        const mutation = `
+            mutation UpdateAttribute {
+              updateAttribute(input: {
+                id: "${attributeId}",
+                patch: ${patchLit}
+              }) { clientMutationId }
+            }
+        `;
+        return await tiqJSHelper.invokeGraphQLAsync(mutation);
+    },
+
+    // Create a new attribute on an owner object by attribute-type
+    // displayName. Used by display scripts when an attribute slot
+    // hasn't been auto-instantiated yet (e.g., a fresh object that
+    // doesn't have a particular attribute on it yet).
+    //
+    // Args shape:
+    //   { ownerId, attributeTypeDisplayName }
+    //     ownerId                  — digits-only object node id (REQUIRED).
+    //     attributeTypeDisplayName — exact displayName of the attribute
+    //                                type to instantiate (REQUIRED).
+    //
+    // Returns the freshly-created `{ id, displayName }` attribute dict.
+    createAttribute: async function(args){
+        const ownerId = String((args && args.ownerId) || '').trim();
+        const name    = String((args && args.attributeTypeDisplayName) || '').trim();
+        if (!ownerId || !/^\d+$/.test(ownerId)) {
+            throw new Error('createAttribute: ownerId must be digits-only; got ' + JSON.stringify(ownerId));
+        }
+        if (!name) {
+            throw new Error('createAttribute: attributeTypeDisplayName is required');
+        }
+        const mutation = `
+            mutation CreateAttribute {
+              createAttribute(input: {
+                attribute: {
+                  ownerId: "${ownerId}",
+                  attributeTypeDisplayName: ${JSON.stringify(name)}
+                }
+              }) {
+                attribute { id displayName }
+              }
+            }
+        `;
+        const resp = await tiqJSHelper.invokeGraphQLAsync(mutation);
+        return resp && resp.data && resp.data.createAttribute && resp.data.createAttribute.attribute || null;
+    },
+
+    // Update an object's properties (importance, displayName, description, …).
+    //
+    // Args shape:
+    //   { id, patch }
+    //     id    — digits-only object node id (REQUIRED).
+    //     patch — plain JS object of fields to set on the ObjectPatch input:
+    //               { importance: -260420 }
+    //               { displayName: "RL-260420-1" }
+    //               { description: "...", importance: 5 }
+    //             Same null/undefined semantics as updateAttribute's patch.
+    //
+    // Returns the GraphQL response envelope.
+    updateObject: async function(args){
+        const id    = String((args && args.id) || '').trim();
+        const patch = (args && args.patch) || {};
+        if (!id || !/^\d+$/.test(id)) {
+            throw new Error('updateObject: id must be digits-only; got ' + JSON.stringify(id));
+        }
+        if (Object.keys(patch).length === 0) {
+            throw new Error('updateObject: patch must contain at least one field');
+        }
+        const patchLit = apiDemoMethods._buildPatchLiteral(patch);
+        const mutation = `
+            mutation UpdateObject {
+              updateObject(input: {
+                id: "${id}",
+                patch: ${patchLit}
+              }) {
+                object { id importance displayName description }
+              }
+            }
+        `;
+        return await tiqJSHelper.invokeGraphQLAsync(mutation);
+    },
+
+    // Query — list tiqTypes with optional filters and optional
+    // related-data subselections. Mirrors the Python automation
+    // helpers `get_type_by_display_name` (single-type lookup) plus
+    // some of the patterns we'd otherwise write by hand inline:
+    // listing types, finding a type's attribute schema, listing
+    // instances under a type, walking sub/super-type relationships.
+    //
+    // Args shape (all optional except as noted):
+    //   {
+    //     typeNameSearch:            String — case-insensitive substring on tiqType.displayName
+    //                                         (PostGraphile `includesInsensitive`). Empty = all types.
+    //     includeTypeAttributes:     Boolean — add `typeToAttributeTypes { id displayName dataType importance }`.
+    //     includeInstances:          Boolean — add `objectsByTypeId(filter: ...) { id displayName description }`.
+    //     instanceNameSearch:        String — case-insensitive substring on instance.displayName,
+    //                                         only used when includeInstances is true.
+    //     includeInstanceAttributes: Boolean — add `attributes { ... }` to each instance,
+    //                                         only used when includeInstances is true.
+    //     includeSubTypes:           Boolean — add `subTypes { id displayName relativeName }`.
+    //     includeSuperType:          Boolean — add `subTypeOf { id displayName relativeName }`.
+    //     includeComposition:        Boolean — add `childEquipment { id displayName }`.
+    //                                         Best-effort field shape; refine if the schema differs.
+    //   }
+    //
+    // Returns the raw `tiqTypes` array from the GraphQL response.
+    // Each entry is `{ id, displayName, relativeName, description,
+    // fqn, idPath }` plus whatever optional subselections were turned
+    // on. Intentionally not flattened — this is an exploration tool.
+    getTypes: async function(args){
+        args = args || {};
+        const typeNameSearch            = String(args.typeNameSearch     || '').trim();
+        const includeTypeAttributes     = !!args.includeTypeAttributes;
+        const includeInstances          = !!args.includeInstances;
+        const instanceNameSearch        = String(args.instanceNameSearch || '').trim();
+        const includeInstanceAttributes = !!args.includeInstanceAttributes;
+        const includeSubTypes           = !!args.includeSubTypes;
+        const includeSuperType          = !!args.includeSuperType;
+        const includeComposition        = !!args.includeComposition;
+
+        // Optional case-insensitive filter on the outer tiqTypes — pushed
+        // down server-side. Omitted entirely when empty so all types come
+        // back without a redundant predicate.
+        const typeFilter = typeNameSearch
+            ? `(filter: { displayName: { includesInsensitive: ${JSON.stringify(typeNameSearch)} } })`
+            : '';
+
+        // Inner instance filter — only used when includeInstances is on.
+        const instFilter = (includeInstances && instanceNameSearch)
+            ? `(filter: { displayName: { includesInsensitive: ${JSON.stringify(instanceNameSearch)} } })`
+            : '';
+
+        // Each subselection is its own conditional fragment, spliced into
+        // the query body if its toggle is on. Empty string when off — so
+        // the rendered query stays as small as the caller asked for.
+        const typeAttrSel = includeTypeAttributes
+            ? `typeToAttributeTypes {
+                    id displayName dataType importance
+                  }`
+            : '';
+
+        const instAttrSel = includeInstanceAttributes
+            ? `attributes {
+                        id displayName floatValue datetimeValue stringValue enumerationName
+                      }`
+            : '';
+
+        const instSel = includeInstances
+            ? `objectsByTypeId${instFilter} {
+                    id displayName description
+                    ${instAttrSel}
+                  }`
+            : '';
+
+        const subTypesSel = includeSubTypes
+            ? `subTypes { id displayName relativeName }`
+            : '';
+
+        const superTypeSel = includeSuperType
+            ? `subTypeOf { id displayName relativeName }`
+            : '';
+
+        // childEquipment is the SMIP "this type is composed of these
+        // equipment subtypes" relation. Field shape on this build is
+        // best-effort — if the schema exposes more fields (multiplicity,
+        // equipmentType, etc.) extend the selection here.
+        const compositionSel = includeComposition
+            ? `childEquipment { id displayName }`
+            : '';
+
+        const query = `
+            query GetTypes {
+              tiqTypes${typeFilter} {
+                id displayName relativeName description fqn idPath
+                ${typeAttrSel}
+                ${instSel}
+                ${subTypesSel}
+                ${superTypeSel}
+                ${compositionSel}
+              }
+            }
+        `;
+
+        const resp = await tiqJSHelper.invokeGraphQLAsync(query);
+        return (resp && resp.data && resp.data.tiqTypes) || [];
+    },
+
+    // Query — fetch a single object by id with optional related-data
+    // subselections. The everyday workhorse for type-bound display
+    // scripts that need to load their own instance.
+    //
+    // Args shape:
+    //   {
+    //     nodeId:              String  — digits-only SMIP object node id (REQUIRED).
+    //     includeAttributes:   Boolean — default TRUE. Returns every value variant
+    //                                    on each attribute (floatValue, datetimeValue,
+    //                                    stringValue, objectValue, enumerationValue)
+    //                                    plus enumerationName and relativeName, so
+    //                                    callers can pick the column matching the
+    //                                    attribute's data_type without a second query.
+    //     includePartOf:       Boolean — default FALSE. Adds the parent object (id /
+    //                                    displayName / typeId / typeName).
+    //     includeChildObjects: Boolean — default FALSE. Adds direct children
+    //                                    (id / displayName / description /
+    //                                    typeId / typeName).
+    //     includeType:         Boolean — default FALSE. Adds a small type pointer
+    //                                    (id / displayName / relativeName).
+    //   }
+    //
+    // Returns the object dict with whatever subselections are turned
+    // on, or null if no object with that id was found. The shape is
+    // intentionally not flattened — same shape as `Query.object` in
+    // GraphQL with the optional fields tacked on.
+    //
+    // Use this in any type-bound display script that needs to load
+    // its own node from `context.std_inputs.node_id`. For loading a
+    // PSD Result with the PSD-specific flat-field shaping, use
+    // taf_carbon_js_sdk's `getPsdResults` instead.
+    getObject: async function(args){
+        args = args || {};
+        const nodeId              = String(args.nodeId || '').trim();
+        const includeAttributes   = (args.includeAttributes !== false);  // default TRUE
+        const includePartOf       = !!args.includePartOf;
+        const includeChildObjects = !!args.includeChildObjects;
+        const includeType         = !!args.includeType;
+
+        if (!nodeId || !/^\d+$/.test(nodeId)) {
+            throw new Error('getObject: nodeId must be digits-only; got ' + JSON.stringify(nodeId));
+        }
+
+        // Each subselection is its own conditional fragment, spliced in
+        // only when the toggle is on — keeps the round-trip lean.
+        const attrsSel = includeAttributes
+            ? `attributes {
+                    id displayName relativeName
+                    floatValue datetimeValue stringValue objectValue
+                    enumerationValue enumerationName
+                  }`
+            : '';
+
+        const partOfSel = includePartOf
+            ? `partOf { id displayName typeId typeName }`
+            : '';
+
+        const childrenSel = includeChildObjects
+            ? `childObjects { id displayName description typeId typeName }`
+            : '';
+
+        const typeSel = includeType
+            ? `type { id displayName relativeName }`
+            : '';
+
+        const query = `
+            query GetObject {
+              object(id: "${nodeId}") {
+                id displayName description typeId typeName partOfId importance
+                ${typeSel}
+                ${attrsSel}
+                ${partOfSel}
+                ${childrenSel}
+              }
+            }
+        `;
+
+        const resp = await tiqJSHelper.invokeGraphQLAsync(query);
+        return (resp && resp.data && resp.data.object) || null;
+    },
+
+});
+
+</script>
